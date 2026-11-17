@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MuseSys General
  * Description: Customer-agnostic order guide core (guides, locations, checkout, order tracking, ledger, and ops).
- * Version: 0.0.2
+ * Version: 0.0.3
  * Author: MuseSystems
  * License: GPL-2.0-or-later
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MUSESYS_GENERAL_VERSION', '0.0.2' );
+define( 'MUSESYS_GENERAL_VERSION', '0.0.3' );
 define( 'MUSESYS_GENERAL_PATH', plugin_dir_path( __FILE__ ) );
 define( 'MUSESYS_GENERAL_URL', plugin_dir_url( __FILE__ ) );
 
