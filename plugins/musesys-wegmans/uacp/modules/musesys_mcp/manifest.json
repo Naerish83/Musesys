@@ -1,0 +1,13 @@
+{
+  "name": "musesys_mcp",
+  "version": "1.0.0",
+  "author": "MuseSystems",
+  "entry": "musesys_mcp.py",
+  "category": "System",
+  "description": "MuseSys Model Context Protocol server. stdio JSON-RPC 2.0 bridge exposing the WooCommerce/MuseSys backend (orders, logistics, product requests, catalog, assets, exports) to LLMs and AI agents per STATE_OF_THE_APP.md Part 2. Enforces UACP validation gates (7-digit WO, 3-digit zero-padded store, strict YYYY-MM-DD dates, status normalization) and 429/5xx exponential backoff.",
+  "tags": ["mcp", "woocommerce", "musesys", "wegmans", "api", "agent", "stdio"],
+  "dependencies": ["mcp>=1.0.0", "requests"],
+  "outputs": ["stdio MCP server: 4 resources, 15 tools"],
+  "status": "active",
+  "notes": "Config: MUSESYS_* env vars override UACP settings.json (active_site schema; searched beside script, repo root, cwd). Register in claude_desktop_config.json or any MCP client. See README.md for client config snippet."
+}

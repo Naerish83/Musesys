@@ -1,0 +1,13 @@
+{
+    "active_site": "ogwegmans",
+    "role": "shipping_clerk",
+    "sites": {
+        "ogwegmans": {
+            "api_url": "https://wegmansparts.com/wp-json/wc/v3/",
+            "consumer_key": "ck_6428859c92337e727fa351f2c9cfcbcbc5528c95",
+            "consumer_secret": "cs_188bb0edc07643216ea4c96120188d82ef1233a3",
+            "WP_USERNAME": "coleh",
+            "WP_APP_PASSWORD": "ahZB Jixr IYcz MtWy 6YKa SlyD"
+        }
+    }
+}

@@ -1,0 +1,235 @@
+Agentprompts-1-30-26:
+1: 
+UACP Active Orders UI Redesign
+Objective: Redesign the Active Orders interface with horizontal panel stacking, improved visual hierarchy, and color-coded entry points for enhanced workflow clarity.
+
+LAYOUT ARCHITECTURE
+Overall Structure: Three horizontal panels stacked vertically
+Panel Distribution:
+
+TOP Panel (RED) - 20% viewport height - Order metadata & actions
+MIDDLE Panel (GREEN) - 30% viewport height - Shipment manifest & line items
+BOTTOM Panel (BLUE) - 50% viewport height - Order listing table
+
+Navigation: Top tabs remain unchanged: Active Orders | Product Requests | Inventory Lookup
+
+🔴 TOP PANEL (RED SECTION - 20%)
+Section Title: Order Details
+Order Info Banner (spans full width):
+Order #[ID] | Status: [status] | Total: $[amount] | Date: [timestamp]
+
+Display when order selected from bottom table
+Left-aligned text
+Bold for order number and status
+
+Form Fields (6 Columns):
+TRX Order # (text input) - Yellow background (#FFF9C4)
+Purchase Order # (text input) - Yellow background (#FFF9C4)
+Tracking # (text input) - Yellow background (#FFF9C4)
+Carrier (dropdown) - Yellow background (#FFF9C4)
+
+Populate with carrier options from existing system
+
+
+☐ Is Drop Ship? (checkbox) - Standard styling
+Status (dropdown) - Yellow background (#FFF9C4)
+
+Options: Order Placed | Processing | Partially Shipped | Completed
+Read-only or auto-updated (see workflow logic below)
+
+
+
+Action Buttons (right-aligned, grouped):
+
+Update Order (primary button styling)
+Update Tracking (secondary button styling)
+Update Status (secondary button styling)
+
+Styling Notes:
+
+All yellow background fields: background-color: #FFF9C4;
+Adequate padding between fields (8-12px)
+Clear labels above or beside each field
+Buttons: minimum 100px width, 36px height
+
+
+🟢 MIDDLE PANEL (GREEN SECTION - 30%)
+Section Title: Shipment Manifest & Pricing
+Line Items Table (full width):
+Columns:
+
+Item / Title (left-aligned, flexible width)
+Qty (center-aligned, 80px)
+WO # (center-aligned, 100px)
+Store (center-aligned, 80px)
+To Ship (center-aligned, 100px) - Yellow background (#FFF9C4)
+Unit Price ($) (right-aligned, 100px)
+
+To Ship Column Special Requirements:
+
+Input fields with yellow background (#FFF9C4)
+Placeholder text: "Qty to ship"
+Tooltip on hover: "Enter quantity for partial shipment (leave empty to ship full quantity)"
+Border: 1px solid #ddd for clarity
+Clear visual emphasis as an interactive field
+
+Table Behavior:
+
+Scrollable if line items exceed panel height
+Row hover effect (light gray background)
+Clean borders, adequate cell padding (8px)
+
+
+🔵 BOTTOM PANEL (BLUE SECTION - 50%)
+Header:
+
+Refresh Orders button (top-left, standard button styling)
+
+Order Listing Table (full width):
+Columns:
+
+ID (80px)
+Status (120px)
+Date Placed (140px)
+TRX # (120px)
+PO # (120px)
+Total (100px, right-aligned)
+Date (180px)
+TRX # (120px)
+
+Interaction:
+
+Clicking any row loads that order's data into TOP (RED) and MIDDLE (GREEN) panels
+Selected row: blue background (#007bff with 20% opacity)
+Row hover: light gray background (#f0f0f0)
+
+Table Features:
+
+Vertical scrolling for all orders
+Fixed header row
+Adequate row height (40px minimum)
+Clear borders between rows
+
+
+⚙️ STATUS WORKFLOW LOGIC
+Automated Status Progression (forward-only):
+Transition 1: Order Placed → Processing
+
+Triggers when ANY of these fields are populated:
+
+TRX Order # has value
+Is Drop Ship? is checked
+Purchase Order # has value
+
+
+Status automatically updates to Processing
+
+Transition 2: Processing → Partially Shipped OR Completed
+
+Triggers when Tracking # is entered
+Conditional logic:
+
+Calculate total To Ship quantities across all line items
+IF sum(To Ship) < sum(Qty) → Status = Partially Shipped
+IF sum(To Ship) = sum(Qty) → Status = Completed
+IF To Ship fields empty, assume full quantity → Status = Completed
+
+
+
+Transition 3: Partially Shipped → Completed
+
+Triggers when additional tracking added AND all remaining quantities shipped
+Re-evaluate sum(To Ship) vs sum(Qty) with each update
+
+Status Dropdown Behavior:
+
+Display current status
+Make read-only if auto-managed, OR
+Allow manual override with validation (can only move forward through stages)
+
+
+🎨 VISUAL STYLING REQUIREMENTS
+Color Palette:
+
+Entry point backgrounds: #FFF9C4 (soft yellow)
+Selected row: rgba(0, 123, 255, 0.2) (light blue)
+Hover state: #f0f0f0 (light gray)
+Borders: #ddd (light gray)
+Primary button: Blue (#007bff)
+Secondary buttons: Gray (#6c757d)
+
+Typography:
+
+Section titles: 16px, bold
+Table headers: 14px, semi-bold
+Table cells: 14px, regular
+Form labels: 13px, regular
+
+Spacing:
+
+Panel padding: 16px
+Field spacing: 8-12px between elements
+Table cell padding: 8px
+Button spacing: 8px between buttons
+
+Responsive Behavior:
+
+Minimum viewport width: 1200px (this is a desktop terminal app)
+Panels maintain percentage heights
+Tables scroll horizontally if columns exceed width
+
+
+🔧 FUNCTIONAL REQUIREMENTS
+Button Actions:
+
+Update Order:
+
+Saves all changes to RED section fields (TRX#, PO#, Tracking, Carrier, Drop Ship status)
+Triggers status workflow evaluation
+Shows success confirmation
+
+
+Update Tracking:
+
+Specifically updates Tracking # and Carrier fields
+Triggers status progression (Processing → Partially Shipped/Completed)
+Shows success confirmation
+
+
+Update Status:
+
+Manually forces status change (if workflow allows)
+Validates against progression rules
+Shows confirmation dialog
+
+
+
+Data Binding:
+
+All fields populate from selected order in BOTTOM table
+Changes reflect in real-time (or after button click, depending on implementation)
+BOTTOM table refreshes after updates
+
+Error Handling:
+
+Validate required fields before saving
+Show inline error messages for invalid data
+Prevent status regression (backward movement)
+
+
+📋 IMPLEMENTATION NOTES
+File Structure:
+
+Maintain existing settings.json connection handling for dual-version support
+Update relevant component files (OrderDetails.jsx, OrderList.jsx, etc.)
+Ensure styling is scoped to Active Orders view only
+
+Testing Checklist:
+
+ Order selection populates TOP and MIDDLE panels correctly
+ Yellow entry point backgrounds render properly
+ Status workflow triggers automatically
+ Partial shipment calculation works correctly
+ Buttons save data and refresh view
+ Table scrolling functions in all panels
+ Responsive behavior at minimum width

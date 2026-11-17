@@ -1,0 +1,60 @@
+[2026-04-30 08:49:16] Error fetching order 236577: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+Traceback (most recent call last):
+  File "C:\Projects\UACP\app\data\bridge.py", line 90, in get_order
+    data = self.client._get(f"orders/{order_id}")
+  File "C:\Projects\UACP\app\api_client.py", line 42, in _get
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\chenderson\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+
+----------------------------------------
+[2026-04-30 08:59:08] Error fetching order 236577: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+Traceback (most recent call last):
+  File "C:\Projects\UACP\app\data\bridge.py", line 90, in get_order
+    data = self.client._get(f"orders/{order_id}")
+  File "C:\Projects\UACP\app\api_client.py", line 42, in _get
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\chenderson\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+
+----------------------------------------
+[2026-04-30 09:12:33] Error fetching order 236577: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+Traceback (most recent call last):
+  File "C:\Projects\UACP\app\data\bridge.py", line 90, in get_order
+    data = self.client._get(f"orders/{order_id}")
+  File "C:\Projects\UACP\app\api_client.py", line 42, in _get
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\chenderson\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+
+----------------------------------------
+[2026-06-05 11:19:02] Error fetching order 236577: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+Traceback (most recent call last):
+  File "C:\Projects\UACP\app\data\bridge.py", line 90, in get_order
+    data = self.client._get(f"orders/{order_id}")
+  File "C:\Projects\UACP\app\api_client.py", line 42, in _get
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\chenderson\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+
+----------------------------------------
+[2026-06-05 11:19:16] Error fetching order 236577: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+Traceback (most recent call last):
+  File "C:\Projects\UACP\app\data\bridge.py", line 90, in get_order
+    data = self.client._get(f"orders/{order_id}")
+  File "C:\Projects\UACP\app\api_client.py", line 42, in _get
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\chenderson\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\requests\models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://wegmansparts.com/wp-json/wc/v3/orders/236577
+
+----------------------------------------

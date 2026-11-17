@@ -1,0 +1,31 @@
+# Virtual environments
+build_env/
+build_env2/
+
+# PyInstaller build output
+build/
+dist/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local release staging
+releases/
+
+# Mega plugin reference data - not part of UACP
+/data/
+
+# Logs and test output
+build_log.txt
+build_log_ascii.txt
+test_api_pr_output.txt
+
+# Local settings (has machine-specific paths)
+settings.json
+
+# OS noise
+Thumbs.db
+.DS_Store

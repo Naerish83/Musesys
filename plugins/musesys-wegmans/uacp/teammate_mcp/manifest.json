@@ -1,0 +1,11 @@
+{
+  "manifest_version": "0.1",
+  "name": "Teammate-MCP",
+  "version": "1.0.0",
+  "description": "A custom teammate agent for MuseDesk.",
+  "author": "Cole Henderson",
+  "server": {
+    "type": "python",
+    "entry_point": "teammate_mcp.py"
+  }
+}
