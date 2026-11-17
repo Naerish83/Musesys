@@ -1,0 +1,35 @@
+wegmans portal terms and workflow: Key Clarifications and clean up
+EAM is wegmans current ERP - many terms flow out from them, and are used as requested - but many near-collisions from repeated similar usage (ie - EAM #, EAM WO #)
+
+WO # - 
+	wegmans work order #. two versions - EAM, 7 digits - Service Channel, 9 digits (also SC WO #)
+	entered on every order (Required), either per line item, or as a global (global_work_order). 
+	Attaches visually over woocommerce order ID on backend (all orders show EAM - (WO#), or SC - (WO#)) - examples: #EAM-3720383 David Young | #SC-361523316 Mark Williams*
+EAM # - 
+	seperate from WO - product identification # in wegmans ERP. internal only, provided for technician ease of use in finding parts. all items are titled EAM # / BRAND, PRODUCT or ITEM #
+	items are labeled for wegmans, but skus/pricing and everything else travel from Gerharz. Pricing is always to be considered stale currently. 
+	Gerharz is capable of creating NEW EAM #s for first-purchase items, within Wegmans EAM system.
+PO # -
+	Purchase order #, provided from Gerharz after an order is placed internally. This is entered on the backend of the portal, or via the Teammate App
+	Tracking is generally attached to this identifier, as its the record of purchase from Gerharz out to vendors
+	Gerharz stocked items will not have a PO #, only vendor placed orders.
+TRX #
+	Order number for TRX, gerharz ERP. 
+	Entered on the wegmans portal backend or via the Teammate app after an order is placed. 	
+	Every woocommerce order # must have a TRX # 
+ORDER # -
+	woocommerce order ID #.
+	currently only for reference. Backend visually replaces the order ID # with (EAM/SC - WO#) *see above for examples
+	only appears on exports and first reference column in Teammate exports. 
+Install store #
+	Wegmans work order byproduct - every work order #(EAM or SC) attaches to a specific store. 
+	This number may or may not match the shipping store #. 
+	This list is the wegmans internal store # identifiers. 
+	work orders usually ship to a store OR warehouse, but majority will always install at actual stores (#1-#150)
+
+A technician logs into the portal > they can search for products directly, add to cart - moving to cart requires selecting your ship to store (choice of stores or warehouses).
+> that data gets pushed into the order as the shipping location, checkout loads > checkout requires the technician entering their WO #, per line item, or use a global check > technician enters install store #, per line item, or global > Purchase complete, order sent to Gerharz > Gerharz processes, then enters TRX # and PO # and sets an ETA, stock status > follow up for tracking information\eta change when available > order marked complete when all lines and quantities have shipped > email fires off with tracking to technician. 
+
+Slight change at end for SC #'s - these have a designated outgoing process with tracking: Any tracking information, or order status change, is automatically forwarded to Service Channel and added as a note to the service channel wo # (SC WO #) 
+
+Custom templating is used abundantly for emails, reformatted woocommerce core pages. 

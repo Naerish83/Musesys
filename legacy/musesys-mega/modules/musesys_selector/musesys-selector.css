@@ -1,0 +1,65 @@
+/* Secondary look for the change-address link */
+a.button.muse-change-address {
+    background: #f3f3f3 !important;
+    border-color: #ddd !important;
+    color: #222 !important;
+}
+a.button.muse-change-address:hover {
+    background: #e2e2e2 !important;
+    border-color: #ccc !important;
+    color: #111 !important;
+}
+
+/* Basic grid for selector form */
+.musesys-selector-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+    gap: 12px !important;
+}
+.musesys-selector-grid .muse-bucket label {
+    display: block !important;
+    font-weight: 600 !important;
+    margin-bottom: 6px !important;
+}
+
+/* Confirm Address button (actual <button>) */
+.musesys-actions button.button.button-primary {
+    display: inline-block !important;
+    padding: .6rem 1rem !important;
+    border-radius: 4px !important;
+    line-height: 1.2 !important;
+    border: 1px solid #1a5aa0 !important;
+    background: #2271b1 !important;
+    color: #fff !important;
+    cursor: pointer !important;
+    vertical-align: middle !important;
+    font-weight: 600 !important;
+    text-align: center !important;
+}
+.musesys-actions button.button.button-primary:hover,
+.musesys-actions button.button.button-primary:focus {
+    background: #135e96 !important;
+    border-color: #0c4a78 !important;
+    color: #fff !important;
+}
+.musesys-actions .button.button-primary,
+.musesys-actions input.button.button-primary {
+  display: inline-block !important;
+  padding: .6rem 1rem !important;
+  border-radius: 4px !important;
+  line-height: 1.2 !important;
+  border: 1px solid #1a5aa0 !important;
+  background: #2271b1 !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+}
+.musesys-actions .button.button-primary:hover,
+.musesys-actions input.button.button-primary:hover,
+.musesys-actions .button.button-primary:focus,
+.musesys-actions input.button.button-primary:focus {
+  background: #135e96 !important;
+  border-color: #0c4a78 !important;
+  color: #fff !important;
+}

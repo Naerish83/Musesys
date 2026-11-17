@@ -1,0 +1,65 @@
+/* Secondary look for the change-address link */
+a.button.muse-change-address {
+    background: #f3f3f3;
+    border-color: #ddd;
+    color: #222;
+}
+a.button.muse-change-address:hover {
+    background: #e2e2e2;
+    border-color: #ccc;
+    color: #111;
+}
+
+/* Basic grid for selector form */
+.musesys-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.musesys-selector-grid .muse-bucket label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+/* Confirm Address button (actual <button>) */
+.musesys-actions button.button.button-primary {
+    display: inline-block;
+    padding: .6rem 1rem;
+    border-radius: 4px;
+    line-height: 1.2;
+    border: 1px solid #1a5aa0;
+    background: #2271b1;
+    color: #fff;
+    cursor: pointer;
+    vertical-align: middle;
+    font-weight: 600;
+    text-align: center;
+}
+.musesys-actions button.button.button-primary:hover,
+.musesys-actions button.button.button-primary:focus {
+    background: #135e96;
+    border-color: #0c4a78;
+    color: #fff;
+}
+.musesys-actions .button.button-primary,
+.musesys-actions input.button.button-primary {
+  display: inline-block;
+  padding: .6rem 1rem;
+  border-radius: 4px;
+  line-height: 1.2;
+  border: 1px solid #1a5aa0;
+  background: #2271b1;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  text-align: center;
+}
+.musesys-actions .button.button-primary:hover,
+.musesys-actions input.button.button-primary:hover,
+.musesys-actions .button.button-primary:focus,
+.musesys-actions input.button.button-primary:focus {
+  background: #135e96;
+  border-color: #0c4a78;
+  color: #fff;
+}

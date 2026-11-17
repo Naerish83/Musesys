@@ -1,0 +1,226 @@
+/* ─── Muse Order History ─────────────────────────────────────── */
+
+.muse-oh-wrap {
+    max-width: 100%;
+}
+
+.muse-oh-header {
+    margin-bottom: 1.25rem;
+}
+
+.muse-oh-header h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.2rem;
+}
+
+.muse-oh-subtitle {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* ─── Filters ────────────────────────────────────────────────── */
+
+.muse-oh-filters {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.muse-oh-filters input[type="text"] {
+    flex: 1 1 220px;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.muse-oh-filters select {
+    padding: 0.45rem 0.65rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    background: #fff;
+}
+
+/* ─── Main Table ─────────────────────────────────────────────── */
+
+.muse-oh-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.muse-oh-table thead th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 2px solid #e0e0e0;
+    font-weight: 600;
+    white-space: nowrap;
+    color: #333;
+}
+
+.muse-oh-order-row td {
+    padding: 0.65rem 0.75rem;
+    vertical-align: middle;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.muse-oh-order-row:hover td {
+    background: #fafafa;
+}
+
+/* ─── Status Badges ──────────────────────────────────────────── */
+
+.muse-oh-status {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.muse-oh-status--completed        { background: #e8f5e9; color: #2e7d32; }
+.muse-oh-status--processing       { background: #e3f2fd; color: #1565c0; }
+.muse-oh-status--cancelled        { background: #fce4ec; color: #b71c1c; }
+.muse-oh-status--on-hold          { background: #fff8e1; color: #e65100; }
+.muse-oh-status--partially-shipped { background: #f3e5f5; color: #6a1b9a; }
+
+/* ─── Tracking Links ─────────────────────────────────────────── */
+
+.muse-oh-carrier {
+    display: inline-block;
+    font-size: 0.8rem;
+}
+
+.muse-oh-carrier a {
+    color: #0071a1;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.muse-oh-carrier a:hover {
+    text-decoration: underline;
+}
+
+.muse-oh-carrier--ups   a { color: #351c15; }
+.muse-oh-carrier--fedex a { color: #4d148c; }
+.muse-oh-carrier--usps  a { color: #004b87; }
+
+.muse-oh-na {
+    color: #bbb;
+}
+
+/* ─── Toggle Button ──────────────────────────────────────────── */
+
+.muse-oh-toggle {
+    padding: 0.3rem 0.7rem !important;
+    font-size: 0.8rem !important;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.muse-oh-toggle-icon {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    margin-left: 2px;
+}
+
+.muse-oh-toggle[aria-expanded="true"] .muse-oh-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* ─── Detail Row ─────────────────────────────────────────────── */
+
+.muse-oh-detail-row td {
+    padding: 0;
+    background: #f9f9f9;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.muse-oh-detail-inner {
+    padding: 1rem 1.25rem;
+}
+
+.muse-oh-detail-note,
+.muse-oh-detail-ship {
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+    color: #444;
+}
+
+/* ─── Line Items Table ───────────────────────────────────────── */
+
+.muse-oh-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+}
+
+.muse-oh-items-table th {
+    text-align: left;
+    padding: 0.4rem 0.65rem;
+    background: #efefef;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+}
+
+.muse-oh-items-table td {
+    padding: 0.4rem 0.65rem;
+    border-bottom: 1px solid #eee;
+    vertical-align: top;
+}
+
+.muse-oh-items-table code {
+    background: #e8e8e8;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+/* ─── Footer Count ───────────────────────────────────────────── */
+
+.muse-oh-footer {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: #888;
+    text-align: right;
+}
+
+/* ─── Empty / Hidden ─────────────────────────────────────────── */
+
+.muse-oh-empty {
+    color: #666;
+    font-style: italic;
+    padding: 1rem 0;
+}
+
+.muse-oh-order-row.muse-oh-hidden,
+.muse-oh-detail-row.muse-oh-hidden {
+    display: none !important;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+
+@media ( max-width: 768px ) {
+    .muse-oh-table thead { display: none; }
+
+    .muse-oh-table tr,
+    .muse-oh-order-row td {
+        display: block;
+    }
+
+    .muse-oh-order-row td::before {
+        content: attr(data-title) ": ";
+        font-weight: 600;
+        display: inline;
+    }
+
+    .col-toggle { text-align: right; }
+
+    .muse-oh-detail-row td { display: block; }
+}

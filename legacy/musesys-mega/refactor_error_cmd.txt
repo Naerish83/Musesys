@@ -1,0 +1,7 @@
+PHP Warning:  PHP Startup: Unable to load dynamic library 'pdo_firebird' (tried: C:\php\ext\pdo_firebird (The specified module could not be found), C:\php\ext\php_pdo_firebird.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'pdo_firebird' (tried: C:\php\ext\pdo_firebird (The specified module could not be found), C:\php\ext\php_pdo_firebird.dll (The specified module could not be found)) in Unknown on line 0
+PHP Parse error:  syntax error, unexpected double-quoted string ",", expecting "]" in c:\Projects\musesys-mega\string_refactor.php on line 63
+
+Parse error: syntax error, unexpected double-quoted string ",", expecting "]" in c:\Projects\musesys-mega\string_refactor.php on line 63
+Errors parsing c:\Projects\musesys-mega\string_refactor.php

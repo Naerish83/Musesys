@@ -1,0 +1,37 @@
+/* MuseSys Favorites — Wegmans Blue Edition */
+
+/* Base toggle container */
+.muse-favorite-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    margin-left: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.muse-favorite-toggle svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Inactive state */
+.muse-fav-inactive svg path {
+    fill: #cccccc;
+}
+
+/* Active state (Wegmans Deep Blue) */
+.muse-fav-active svg path {
+    fill: #003d9a;
+}
+
+/* Processing pulse */
+.muse-fav-processing {
+    opacity: 0.35 !important;
+    pointer-events: none;
+}

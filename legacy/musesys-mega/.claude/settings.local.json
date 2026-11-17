@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -v)",
+      "Bash(where php *)",
+      "Bash(php -l modules/musesys-wegmans-transfer-items/index.php)",
+      "Bash(php -l modules/musesys-api/musesys-api.php)",
+      "mcp__cloudways__app_get",
+      "mcp__cloudways__list_available_toolsets",
+      "mcp__cloudways__get_toolset_tools",
+      "mcp__cloudways__execute_tool",
+      "PowerShell($f=\"C:\\\\Projects\\\\musesys-mega\\\\debug.log\"; Select-String -Path $f -Pattern \"product_request|musesys_pr|muse_pr|product-request|MuseProductRequest\" -AllMatches | Select-Object -Last 40 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line\\)\" })",
+      "PowerShell(Select-String -Path \"C:\\\\Projects\\\\musesys-mega\\\\nginx-app.status.log.1\",\"C:\\\\Projects\\\\musesys-mega\\\\php-app.access.log.1\",\"C:\\\\Projects\\\\musesys-mega\\\\backend_wordpress-1564610-6079396.cloudwaysapps.com.access.log.1\" -Pattern \"add-to-cart\" | ForEach-Object { \"[$\\($_.Filename\\)] $\\($_.Line\\)\" })",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cp modules/muse-product-request/index.php __TRACKED_VAR__/muse-product-request-index.php.bak)",
+      "Bash(cp \"modules/muse-product-request/index.php\" \"/c/Users/CHENDE~1/AppData/Local/Temp/claude/C--Projects-musesys-mega/984bc5a9-f8a7-43cb-bbe4-8b7764fac106/scratchpad/muse-product-request-index.php.bak\")",
+      "Read(//c/Users/CHENDE~1/AppData/Local/Temp/claude/C--Projects-musesys-mega/984bc5a9-f8a7-43cb-bbe4-8b7764fac106/scratchpad//**)"
+    ]
+  }
+}

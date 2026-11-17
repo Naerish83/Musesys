@@ -1,0 +1,264 @@
+MuseSys Mega Plugin Architecture Audit & Expose
+Hey Boss. I took a deep dive into the musesys-mega directory to map out the entire vibe. Here is the master list of all the custom data structures, touchpoints, and little details keeping the rug tied together. We've got flags for the inconsistencies in Work Order metadata as well, so we can get this refactored and chill.
+
+🚨 Work Order Metadata Inconsistencies & Flags
+Dude, the work order naming is a bit un-chill right now. There are several meta keys floating around that seem to serve similar or identical functional purposes across different modules.
+
+Global/Order-level Work Orders:
+_muse_global_work_order (in muse-checkout-orchestrator)
+_work_orders (array/consolidated, used in muse-product-request, muse-wo-consolidation, musesys-account-dashboard)
+_primary_work_order (in musesys-account-dashboard)
+_muse_workorder (defined in musesys-workorder-column)
+Line-item Work Orders:
+_muse_lineitem_workorder (in musesys-workorder-column)
+Other overlapping structures:
+Tracking Numbers: _tracking_number (product requests) vs _muse_latest_tracking_number (partial ship).
+Install Stores: _install_stores vs _musesys_install_store vs _muse_global_install_store.
+1. Meta Keys
+(First definition or most prominent usage)
+
+Work Order / Order Meta
+_muse_global_work_order — 
+muse-checkout-orchestrator/musesys-orchestrator.php
+ (Line 647)
+_work_orders — 
+muse-product-request/index.php
+ (Line 33)
+_primary_work_order — 
+musesys-account-dashboard/index.php
+ (Line 330)
+_work_order_count — 
+musesys-account-dashboard/index.php
+ (Line 331)
+_muse_lineitem_workorder — 
+musesys-workorder-column/musesys-workorder-column.php
+ (Line 21)
+_muse_lineitem_workorder_note — 
+musesys-workorder-column/musesys-workorder-column.php
+ (Line 22)
+_muse_workorder_item_note — 
+musesys-workorder-column/musesys-workorder-column.php
+ (Line 20)
+Cart & Checkout
+_musesys_active_cart_data — 
+muse-active-cart-tracker/index.php
+ (Line 43)
+_musesys_active_cart_updated — 
+muse-active-cart-tracker/index.php
+ (Line 60)
+_muse_contact_phone — 
+muse-checkout-orchestrator/musesys-orchestrator.php
+ (Line 640)
+contact_phone (User Meta) — 
+muse-checkout-orchestrator/musesys-orchestrator.php
+ (Line 74)
+Product Requests
+_musesys_pr_status — 
+product_request.php
+ (Line 209)
+_musesys_pr_type — 
+product_request.php
+ (Line 210)
+_musesys_product_items — 
+product_request.php
+ (Line 211)
+_musesys_customer_email — 
+muse-email-manager/muse-email-manager.php
+ (Line 28)
+_musesys_pr_id — 
+muse-product-request/index.php
+ (Line 39)
+_order_token — 
+product_request.php
+ (Line 361)
+_musesys_pr_product_id — 
+product_request.php
+ (Line 271)
+brand — 
+product_request.php
+ (Line 207)
+model — 
+product_request.php
+ (Line 208)
+Shipping & Tracking
+_tracking_number — 
+muse-product-request/index.php
+ (Line 1054), 
+muse-email-manager.php
+_tracking_type — 
+muse-product-request/index.php
+ (Line 1055), 
+muse-email-manager.php
+_tracking_display — 
+muse-product-request/index.php
+ (Line 1056)
+_muse_shipments — 
+musesys-partial-ship/index.php
+ (Line 14)
+_muse_latest_tracking_number — 
+musesys-partial-ship/index.php
+ (Line 15)
+_muse_shipping_status — 
+musesys-partial-ship/index.php
+ (Line 16)
+_install_stores — 
+muse-wo-consolidation/muse-wo-consolidation.php
+ (Line 256)
+_musesys_install_store — 
+musesys-orchestrator.php
+ (Line 61)
+_muse_global_install_store — 
+musesys-orchestrator.php
+ (Line 656)
+User Favorites & Settings
+musesys_favorites / muse_favorite_parts — 
+musesys-favorite-locations-v1.3.7.php
+ (Line 50)
+musesys_favorite_products — musesys-favorite-products-bridge.php (Line 10)
+muse_dashboard_filters — 
+musesys-account-dashboard/index.php
+ (Line 70)
+_preferred_contact_method — 
+muse-notification-preference/index.php
+ (Line 37)
+Miscellaneous (Assets & Manuals)
+Muse_eam / Muse_partnumber — 
+wegmans-brand-filter.php
+ (Line 192)
+_asset_manual_files — 
+muse-asset-profile/index.php
+ (Line 139)
+_muse_manual_file, _muse_manual_url, _muse_manual_model_raw — 
+musesys-equip-search.php
+ (Line 290)
+_muse_prop65_enabled, _muse_prop65_chems, _muse_prop65_message — 
+musesys-activity-tracker/index.php
+ (Line 15)
+2. Constants
+(Excluding JS const variable declarations)
+
+MUSE_CO_GUARD — 
+muse-checkout-orchestrator/musesys-orchestrator.php
+MUSE_CO_HIDE, MUSE_CO_PRIORITIES, MUSE_CO_LABELS — 
+musesys-orchestrator.php
+MUSE_WO_FIELD_KEY, MUSE_WO_TOGGLE_KEY, MUSE_WO_REQUIRE_TOGGLE, MUSE_WO_PROPAGATE_TO_ITEMS — 
+musesys-workorder-column.php
+MUSE_WO_ITEM_NOTE_KEY, MUSE_WO_ITEM_META_WO, MUSE_WO_ITEM_META_NOTE, MUSE_WO_REGEX — 
+musesys-workorder-column.php
+MUSE_FAV_PROD_KEY (musesys_favorite_products) — musesys-favorite-products-bridge.php
+MUSE_IS_LABEL, MUSE_IS_CART_KEY, MUSE_IS_FIELD_ROOT, MUSE_IS_META_LABEL, MUSE_IS_META_KEY, MUSE_IS_MAX, MUSE_IS_GLOBAL_TOGGLE_KEY, MUSE_IS_GLOBAL_FIELD_KEY — 
+musesys-orchestrator.php
+PR_STATUS_PENDING, PR_STATUS_PROCESSING, PR_STATUS_AWAITING_CONFIRM, PR_STATUS_COMPLETED, PR_STATUS_REJECTED — 
+muse-product-request/index.php
+MUSESYS_REPORTS_VERSION, MUSESYS_REPORTS_PATH, MUSESYS_REPORTS_URL, MUSESYS_REPORT_RECIPIENTS — 
+musesys-reports.php
+MUSESYS_ADDR_STORES, MUSESYS_ADDR_WAREHOUSES, MUSESYS_ADDR_OTHER — 
+musesys-shipping-selector.php
+MUSESYS_SELECTOR_URL — 
+musesys-store-selector.php
+MUSESYS_FAVORITES_MAX — 
+musesys-address-api.php
+MUSESYS_MANUALS_LOADED — 
+musesys-equip-search.php
+GE_BRAND_TAXONOMY, GE_BRAND_PARAM — 
+wegmans-brand-filter.php
+MUSESYS_MEGA_PATH, MUSESYS_MEGA_URL — 
+musesys-mega.php
+MUSE_GASKET_DRAWER, MUSE_GASKET_UNDERCOUNTER, MUSE_GASKET_UPRIGHT, MUSE_GASKET_WALKIN — custom-gaskets.php
+3. REST API Routes
+musesys/v1/product-requests — 
+product_request.php
+ (Line 443)
+musesys/v1/product-requests/(?P<id>\d+) — 
+muse-product-request/index.php
+ (Line 1770)
+musesys/v1/product-requests/(?P<id>\d+)/complete — 
+muse-product-request/index.php
+ (Line 1778)
+musesys/v1/addresses/(?P<set>stores|warehouses) — 
+musesys-address-api.php
+ (Line 80)
+musesys/v1/favorites — 
+musesys-address-api.php
+ (Line 89)
+musesys/v1/orders/(?P<id>\d+)/ship-lines — 
+musesys-partial-ship/index.php
+ (Line 652)
+musesys/api/v1/fields — 
+musesys-api/musesys-api.php
+ (Line 21)
+musesys/api/v1/meta/user/(?P<id>\d+) — 
+musesys-api/musesys-api.php
+ (Line 28)
+musesys/api/v1/meta/post/(?P<id>\d+) — 
+musesys-api/musesys-api.php
+ (Line 35)
+4. Action & Filter Hooks
+Actions (do_action)
+muse_send_sc_automation — 
+muse-order-tracking.php
+ (Line 208)
+woocommerce_account_product-requests_endpoint — 
+musesys-account-dashboard/index.php
+ (Line 838)
+woocommerce_account_favorite-locations_endpoint — 
+musesys-account-dashboard/index.php
+ (Line 840)
+woocommerce_account_favorite-products_endpoint — 
+musesys-account-dashboard/index.php
+ (Line 842)
+woocommerce_account_content — 
+musesys-account-dashboard/index.php
+ (Line 845)
+muse_send_pr_update — 
+muse-product-request/index.php
+ (Line 1249)
+muse_send_pr_order_link — 
+muse-product-request/index.php
+ (Line 1511)
+Filters (apply_filters)
+woocommerce_valid_order_statuses_for_order_again — 
+muse-order-repeat.php
+ (Line 29)
+musesys_selector_page_url — 
+musesys-store-selector.php
+ (Line 165)
+musesys_manuals_base_dir — 
+musesys-equip-search.php
+ (Line 29)
+musesys_manuals_base_url — 
+musesys-equip-search.php
+ (Line 30)
+woocommerce_cart_item_product — 
+checkout-thumbs.php
+ (Line 36)
+5. Database Tables & Important Options
+Custom Tables
+musesys_login_log — Created via 
+musesys-activity-tracker-legacy/index.php
+ (Line 86)
+musesys_activity_log — Created via 
+musesys-activity-tracker-legacy/index.php
+ (Line 100)
+musesys_login_flags_legacy — Created via 
+musesys-activity-tracker-legacy/index.php
+ (Line 117)
+musesys_email_log — Created via 
+Musesys-Email-Logger/musesys-email-logger.php
+ (Line 71)
+wp_options Keys
+musesys_pr_sequence — Auto-incrementing PR ID (Line 55, 
+product_request.php
+)
+musesys_addresses_stores / musesys_addresses_warehouses — JSON mapping for addresses (
+musesys-shipping-selector.php
+)
+musesys_locations_json — Backwards compatibility for locations (
+musesys-favorite-locations-v1.3.7.php
+)
+musesys_endpoints_flushed — Re-write flush flag (
+musesys-account-dashboard/index.php
+)
+musesys_activity_tracker_legacy_ver — Version tracker for legacy DB (
+musesys-activity-tracker-legacy/index.php
+)
