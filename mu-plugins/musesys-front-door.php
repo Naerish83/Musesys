@@ -1,119 +1,92 @@
 <?php
 /**
- * Plugin Name: Wegmans Members-Only Front Door
- * Description: Locks the entire site behind login while preserving password reset, activation flows, and securing REST access.
- * Version: 1.3
- * Author: MuseSys
- * Author URI: https://musesys.com
+ * Plugin Name: MuseSys Members-Only Front Door
+ * Description: Locks each site behind login and multisite site-membership while preserving password reset, activation flows, and securing REST access.
+ * Version: 1.4.0
+ * Author: MuseSystems
+ * License: GPL-2.0-or-later
  */
 
-if (!defined('ABSPATH')) {
-    exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
+add_action( 'template_redirect', 'musesys_members_only_gate', 1 );
+
 /**
- * Main gate: Redirect non-logged-in users to login page
+ * Redirect non-logged-in users to login and block non-members on multisite.
  */
-add_action('template_redirect', 'wegmans_members_only_gate', 1);
+function musesys_members_only_gate() {
+	if ( isset( $GLOBALS['pagenow'] ) && in_array( $GLOBALS['pagenow'], array( 'wp-login.php', 'wp-register.php' ), true ) ) {
+		return;
+	}
 
-function wegmans_members_only_gate() {
+	if (
+		isset( $_GET['action'] ) &&
+		in_array(
+			$_GET['action'],
+			array( 'lostpassword', 'rp', 'resetpass', 'enter_recovery_mode', 'newaccount' ),
+			true
+		)
+	) {
+		return;
+	}
 
-    // Allow logged-in users
-    if (is_user_logged_in()) {
-        return;
-    }
+	if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'lost-password' ) ) {
+		return;
+	}
 
-    // Allow core auth pages
-    if (isset($GLOBALS['pagenow']) && in_array($GLOBALS['pagenow'], [
-        'wp-login.php',
-        'wp-register.php'
-    ], true)) {
-        return;
-    }
+	if ( ( defined( 'DOING_AJAX' ) && DOING_AJAX ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ( defined( 'DOING_CRON' ) && DOING_CRON ) ) {
+		return;
+	}
 
-    // Allow password reset / recovery / activation actions
-    if (
-        isset($_GET['action']) &&
-        in_array($_GET['action'], [
-            'lostpassword',
-            'rp',
-            'resetpass',
-            'enter_recovery_mode',
-            'newaccount'
-        ], true)
-    ) {
-        return;
-    }
+	if ( ! is_user_logged_in() ) {
+		$redirect_to = $_SERVER['REQUEST_URI'] ?? home_url();
+		wp_safe_redirect( wp_login_url( $redirect_to ) );
+		exit;
+	}
 
-    // Allow WooCommerce lost password endpoint (if used)
-    if (function_exists('is_wc_endpoint_url') && is_wc_endpoint_url('lost-password')) {
-        return;
-    }
-
-    // Allow AJAX requests
-    if (defined('DOING_AJAX') && DOING_AJAX) {
-        return;
-    }
-
-    // Allow REST bootstrap (actual auth handled below)
-    if (defined('REST_REQUEST') && REST_REQUEST) {
-        return;
-    }
-
-    // Allow wp-cron
-    if (defined('DOING_CRON') && DOING_CRON) {
-        return;
-    }
-
-    // Redirect to login, preserving intended destination
-    $redirect_to = $_SERVER['REQUEST_URI'] ?? home_url();
-    wp_redirect(wp_login_url($redirect_to));
-    exit;
+	if ( is_multisite() && ! is_super_admin() && ! is_user_member_of_blog( get_current_user_id() ) ) {
+		wp_die(
+			esc_html__( 'Your account does not have access to this ordering portal. Please contact support.', 'musesys-front-door' ),
+			esc_html__( 'Access Denied', 'musesys-front-door' ),
+			array( 'response' => 403 )
+		);
+	}
 }
 
-/**
- * Disable XML-RPC (common bot vector)
- */
-add_filter('xmlrpc_enabled', '__return_false');
+add_filter( 'xmlrpc_enabled', '__return_false' );
 
-/**
- * Hide login errors to prevent username enumeration
- */
-add_filter('login_errors', function () {
-    return 'Invalid credentials. Please try again.';
-});
+add_filter(
+	'login_errors',
+	function () {
+		return __( 'Invalid credentials. Please try again.', 'musesys-front-door' );
+	}
+);
 
-/**
- * Block REST access for non-logged-in users (corrected logic)
- */
-add_filter('rest_authentication_errors', function ($result) {
+add_filter(
+	'rest_authentication_errors',
+	function ( $result ) {
+		if ( ! empty( $result ) ) {
+			return $result;
+		}
 
-    // If another authentication error already exists, respect it
-    if (!empty($result)) {
-        return $result;
-    }
+		if ( ! is_user_logged_in() ) {
+			return new WP_Error(
+				'rest_not_logged_in',
+				'You must be logged in to access this endpoint.',
+				array( 'status' => 401 )
+			);
+		}
 
-    // --- OPTIONAL ESCAPE HATCH (commented out) ---
-    // Allow specific REST namespaces if ever required
-    /*
-    $request = rest_get_server()->get_current_request();
-    $route   = $request ? $request->get_route() : '';
+		if ( is_multisite() && ! is_super_admin() && ! is_user_member_of_blog( get_current_user_id() ) ) {
+			return new WP_Error(
+				'rest_not_site_member',
+				'You are not a member of this site.',
+				array( 'status' => 403 )
+			);
+		}
 
-    // Example: Allow Woo Store API
-    if (str_starts_with($route, '/wc/store/')) {
-        return $result;
-    }
-    */
-    // --- END OPTIONAL ESCAPE HATCH ---
-
-    // Block all other unauthenticated REST access
-    if (!is_user_logged_in()) {
-        return new WP_Error(
-            'rest_not_logged_in',
-            'You must be logged in to access this endpoint.',
-            ['status' => 401]
-        );
-    }
-
-    return $result;
-});
+		return $result;
+	}
+);
