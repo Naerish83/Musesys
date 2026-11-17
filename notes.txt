@@ -1,0 +1,13 @@
+UACP 2.1.2
+- Fixed: Automated 60-day chunked slicing on wide export queries in MuseDataBridge with progressive UI loading in Shipment Desk, preventing server PHP memory limits (HTTP 500) while delivering immediate order availability (initial 60-day chunk ready in ~3s, background chunks seamlessly merged).
+
+UACP 2.1.1
+- Fixed: Shipment Desk and Order Guide now query a rolling 180-day window (configurable via settings.json "lookback_days") instead of unbounded export_all=True, preventing WordPress PHP memory exhaustion (HTTP 500) on the musesys/v1/export-orders endpoint
+- Added: Direct single-order lookup fallback in Shipment Desk if searching by order number outside the rolling cache window
+
+UACP 2.0.9
+- Fixed: Product Request completion was hitting the wrong API endpoint (/product-requests/{id} instead of /product-requests/{id}/complete), preventing status changes and item mapping from being saved
+- Fixed: complete_request_api on the backend now properly reads and merges incoming product IDs/links into the stored request items before triggering status lifecycle and customer email
+- Fixed: Added missing openpyxl dependency for XLSX export
+- New: Order Export (XLSX) button in Active Orders — export by date range and status filter directly from the in-memory cache, no backend round-trip required
+- New: Two-sheet workbook output — full order detail sheet plus a lean TRX Numbers sheet for Cairn import

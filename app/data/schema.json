@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MuseSysMegaData",
+  "type": "object",
+  "properties": {
+    "user_meta": {
+      "type": "object",
+      "properties": {
+        "musesys_favorites": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "List of favorite location IDs"
+        },
+        "muse_favorite_parts": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "List of favorite part IDs"
+        },
+        "musesys_favorite_products": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "List of favorite product IDs"
+        },
+        "contact_phone": {
+          "type": "string",
+          "description": "User contact phone number"
+        }
+      }
+    },
+    "order_meta": {
+      "type": "object",
+      "properties": {
+        "_is_drop_ship": {
+          "type": "boolean",
+          "description": "Is this a drop ship order?"
+        },
+        "_purchase_order_number": {
+          "type": "string",
+          "description": "Purchase Order Number"
+        },
+        "_muse_wo_global": {
+          "type": "string",
+          "pattern": "^\\d{7}$",
+          "description": "Work Order #"
+        },
+        "additional_install_store_number": {
+          "type": "string",
+          "pattern": "^\\d{3}$",
+          "description": "Install Store Number (000-200)"
+        },
+        "_musesys_technician_phone": {
+          "type": "string",
+          "description": "Technician Phone Number"
+        }
+      }
+    },
+    "product_meta": {
+      "type": "object",
+      "properties": {
+        "_muse_part_number": {
+          "type": "string",
+          "description": "Manufacturer Part Number"
+        },
+        "_muse_manual_file": {
+          "type": "string",
+          "description": "Path to manual file"
+        },
+        "_muse_manual_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to manual file"
+        },
+        "_muse_manual_model_raw": {
+          "type": "string",
+          "description": "Raw model string from manual filename"
+        },
+        "_muse_prop65_enabled": {
+          "type": "boolean",
+          "description": "Is Prop 65 warning enabled?"
+        },
+        "_muse_prop65_chems": {
+          "type": "string",
+          "description": "Comma-separated list of chemicals"
+        },
+        "_muse_prop65_message": {
+          "type": "string",
+          "description": "Custom Prop 65 warning message"
+        }
+      }
+    },
+    "request_meta": {
+      "type": "object",
+      "properties": {
+        "brand": {
+          "type": "string",
+          "description": "Product Brand"
+        },
+        "model": {
+          "type": "string",
+          "description": "Product Model"
+        },
+        "eam": {
+          "type": "string",
+          "description": "EAM Number"
+        },
+        "_muse_pr_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "approved",
+            "rejected",
+            "completed"
+          ],
+          "description": "Product Request Status"
+        },
+        "_muse_customer_user_id": {
+          "type": "integer",
+          "description": "ID of the user who made the request"
+        },
+        "_muse_customer_email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email of the customer"
+        }
+      }
+    }
+  }
+}

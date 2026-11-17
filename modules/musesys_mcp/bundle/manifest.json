@@ -1,0 +1,90 @@
+{
+  "manifest_version": "0.3",
+  "name": "musesys-mcp",
+  "display_name": "MuseSys MCP",
+  "version": "1.0.1",
+  "description": "MuseSys/WooCommerce backend bridge for wegmansparts.com — orders, logistics, product requests, catalog, assets, exports.",
+  "long_description": "stdio MCP server implementing UACP STATE_OF_THE_APP.md Part 2. Exposes 4 resources and 15 tools against the MuseSys WordPress backend with server-side validation gates (7-digit WO numbers, 3-digit zero-padded stores, strict YYYY-MM-DD dates, status normalization) and exponential backoff on 429/5xx. Credentials are collected at install time and passed as environment variables; nothing is written to disk.",
+  "author": {
+    "name": "MuseSystems",
+    "email": "cole.h@gerharzequipment.com"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "python",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "C:\\Users\\chenderson\\.local\\bin\\uv.exe",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "MUSESYS_API_URL": "${user_config.api_url}",
+        "MUSESYS_CONSUMER_KEY": "${user_config.consumer_key}",
+        "MUSESYS_CONSUMER_SECRET": "${user_config.consumer_secret}",
+        "MUSESYS_WP_USERNAME": "${user_config.wp_username}",
+        "MUSESYS_WP_APP_PASSWORD": "${user_config.wp_app_password}"
+      }
+    }
+  },
+  "user_config": {
+    "api_url": {
+      "type": "string",
+      "title": "Site URL",
+      "description": "Base WordPress site URL",
+      "default": "https://wegmansparts.com",
+      "required": true
+    },
+    "consumer_key": {
+      "type": "string",
+      "title": "WooCommerce Consumer Key",
+      "description": "WooCommerce REST API consumer key (ck_...)",
+      "sensitive": true,
+      "required": true
+    },
+    "consumer_secret": {
+      "type": "string",
+      "title": "WooCommerce Consumer Secret",
+      "description": "WooCommerce REST API consumer secret (cs_...)",
+      "sensitive": true,
+      "required": true
+    },
+    "wp_username": {
+      "type": "string",
+      "title": "WordPress Username",
+      "description": "WP core username (required for musesys/v1 custom routes)",
+      "required": true
+    },
+    "wp_app_password": {
+      "type": "string",
+      "title": "WordPress Application Password",
+      "description": "WP Application Password for the user above",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "tools": [
+    { "name": "musesys_get_orders", "description": "Retrieve order lists with optional status/WO/store filters" },
+    { "name": "musesys_get_order", "description": "Fetch full detail of a specific order" },
+    { "name": "musesys_update_order_fields", "description": "Update order-level WO/TRX #, PO #, dropship flag, manual total" },
+    { "name": "musesys_update_order_logistics", "description": "Update logistics status, ETA, replacement part" },
+    { "name": "musesys_update_order_line_item", "description": "Update item-level WO #, install store, asset tag" },
+    { "name": "musesys_ship_lines", "description": "Post a shipment with tracking; advances fulfillment status" },
+    { "name": "musesys_get_product_requests", "description": "Fetch all pending field-technician product requests" },
+    { "name": "musesys_complete_product_request", "description": "Map products to a request and mark it completed" },
+    { "name": "musesys_search_catalog", "description": "Query the product catalog by SKU, description, or title" },
+    { "name": "musesys_create_product", "description": "Insert a new product into the WooCommerce catalog" },
+    { "name": "musesys_update_product", "description": "Modify an existing catalog product" },
+    { "name": "musesys_get_assets", "description": "Retrieve all registered assets for a 3-digit store" },
+    { "name": "musesys_update_asset", "description": "Update technical/operational details for a store asset" },
+    { "name": "musesys_export_orders", "description": "Flattened order/line-item export for a date range" },
+    { "name": "musesys_export_aq", "description": "Export AutoQuotes JSON payload for a single order" }
+  ],
+  "tools_generated": false,
+  "keywords": ["musesys", "woocommerce", "wegmans", "orders", "erp", "procurement"],
+  "license": "Proprietary",
+  "compatibility": {
+    "platforms": ["win32", "darwin", "linux"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}
