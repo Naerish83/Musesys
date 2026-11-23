@@ -1,6 +1,6 @@
 # MuseSys Ledger — Implementation Spec (v1)
 
-Status: **v1 BUILT** (2026-10-01). Unit- and SQL-level tests pass. Staging verification (§10.2, §10.3) has **not** been performed yet. See §14 for where the build differs from this text.
+Status: **v1 BUILT** (2026-10-01). Unit- and SQL-level tests pass. Staging verification (§10.2, §10.3) has **not** been performed yet. See §14 for where the build differs from this text. **§15 (proposed updates from an outside system) BUILT 2026-11-23, not deployed.**
 Date: 2026-10-01
 Module: `modules/musesys-ledger/`
 
@@ -652,3 +652,180 @@ Enables the locked agent to view on-track orders due within the next 2 business 
   - `tests/coming_due_test.php` (9 passed, 0 failed): Thursday covers Thu/Fri/Mon, Friday covers through Tue EOD, Saturday covers through Tue EOD, due today included, 3rd business day excluded, non-ON_TRACK excluded, null due_at excluded, `summarize()` exclusion verified, `present_row()` marking verified.
   - `tests/integration_test.php` (16 passed, 0 failed): verifies MySQL query in `rows_coming_due()` finds only ON_TRACK rows within 2 bdays and `rows_for(true)` excludes them.
   - Full suite verification: all 75 unit and integration tests pass cleanly with 0 regressions.
+
+---
+
+## 15. Proposed updates from an outside system (added 2026-11-23)
+
+Status: **BUILT, not deployed.** Unit- and SQL-level tests pass (§15.8). Nothing in this section has run inside
+WordPress yet (§15.9). Built in `plugins/musesys-general/modules/musesys-ledger/` only; production runs
+`musesys-mega` 1.2.11 and does not have it.
+
+### 15.1 Rule
+
+> An outside system never writes order data. It files a **proposal**. A person approves or rejects it on the
+> ledger. Approval runs the existing shipment mutation, the same one UACP calls.
+
+The first outside system is Cairn, which can tie a vendor's shipment notice or our own UPS label to an open order
+by TRX # or PO #. The mechanism is not Cairn-specific: `source` is free text and every site running this module
+gets the same endpoints. The ledger still stores no canonical business data: a proposal is a request, and the
+shipment lives where it always has (`_muse_shipments`).
+
+This supersedes three v1 non-goals in §1.1 for this path only: "No tracking entry and no shipment recording",
+"No Cairn export" and "No changes to … endpoints". No existing endpoint was changed; four were added. The agent
+(D5) still cannot record a shipment: approving needs a capability the agent role does not have (§15.4).
+
+v1 handles one kind: `shipment` (carrier + tracking numbers, optionally lines). TRX #, PO # and ETA proposals are
+not built.
+
+### 15.2 Data model
+
+`{prefix}musesys_ledger_proposals`, created by `Ledger_Schema` (schema version `1.0.0` → `1.1.0`):
+
+| Column | Meaning |
+|---|---|
+| `source`, `source_ref` | Who filed it and their own id for it. **Unique together: the idempotency key.** |
+| `order_id`, `kind` | The open order it is about; `shipment`. |
+| `payload_json` | `{carrier, other_carrier, tracking_numbers[], lines[{order_item_id, qty}]}`. Lines may be empty. |
+| `summary`, `evidence_json` | Display text for the reviewer (why the system believes this). Tags stripped, 8,000 bytes at most. Never executed. |
+| `status`, `status_note` | `pending` → `applying` → `applied`, or `rejected`, or `superseded`. The note carries a reject reason, a failure, or why it was closed. |
+| `created_by`, `decided_by`, `decided_at`, `result_json` | The filing account; the approver or rejecter; what the mutation returned. |
+| `created_at`, `updated_at` | UTC. `updated_at` is what a poller filters on. |
+
+Status changes are guarded updates (`… WHERE id = ? AND status = ?`), so two approvals, or an approval and a
+reject or withdraw, cannot both win.
+
+### 15.3 REST contract (namespace `musesys/v1`, capability `musesys_ledger_propose`)
+
+| Route | Purpose |
+|---|---|
+| `GET /ledger/open-orders` | Every open order as the ledger sees it: TRX, PO, drop-ship flag, store, tenant references (`musesys_order_references` filter, e.g. Work Order #), lines with ordered / shipped quantity, tracking already recorded, pending proposal refs. The outside system proposes against this, not against its own copy of the order. |
+| `POST /ledger/proposals` | File a proposal. `201` when created, `200` with the stored proposal when the same `source` + `source_ref` was filed before (nothing is overwritten). `400` invalid, `404` no such order, `409` order not open in the ledger, `422` a proposed line is not an open line of that order. |
+| `GET /ledger/proposals?status=&source=&order_id=&updated_since=&limit=` | Read decisions. With `updated_since` the list is oldest change first, for polling. |
+| `GET /ledger/proposals/{id}` | One proposal. |
+| `POST /ledger/proposals/{id}/withdraw` | The filing system takes back a **pending** proposal (`{reason}`); `409` otherwise. |
+
+Request body for a proposal:
+
+```json
+{
+  "source": "cairn",
+  "source_ref": "pkg-8f3a…",
+  "order_id": 238207,
+  "kind": "shipment",
+  "carrier": "UPS",
+  "tracking_numbers": ["1Z…"],
+  "lines": [{"order_item_id": 9911, "qty": 2}],
+  "summary": "Vendor shipment notice, PO CH-123456",
+  "evidence": {"vendor": "…", "po": "CH-123456", "observed_at": "2026-11-20T14:02:00Z"}
+}
+```
+
+- `carrier` ∈ `UPS`, `FEDEX`, `USPS`, `DHL`, `LTL`, `OTHER` (`other_carrier` required with `OTHER`). The internal
+  hand-over codes `TECH_DELIVERY` and `CUSTOMER_PICKUP` cannot be proposed.
+- 1 to 10 tracking numbers; duplicates (compared on letters and digits only) are dropped.
+- A proposal whose tracking numbers are all already on the order is stored as `superseded` ("Already recorded on
+  the order."), so the filer learns the outcome and no one is asked to review it.
+
+There is no approve route. An outside system cannot approve.
+
+### 15.4 Access
+
+| Capability | Granted to | Allows |
+|---|---|---|
+| `musesys_ledger_propose` | new role `musesys_ledger_service` ("Ledger Integration": `read` + this, no Woo capabilities); `administrator` | The REST routes in §15.3 |
+| `musesys_ledger_approve` | `administrator` only | Approve / reject on the ledger screen |
+
+- The roles version goes `1` → `2`, so the role and capabilities are registered on the next request after deploy.
+- **Who may approve is a default, not a decision.** Granting `musesys_ledger_approve` to the agent role would let
+  the agent record shipments, which D5 and §6.2 rule out today. Approval also runs the ship-lines endpoint as the
+  approving user, and that endpoint demands `manage_woocommerce` or `edit_shop_orders`; the agent has neither.
+- The locked agent can open the tab and read proposals (`musesys_ledger_proposals` is on the AJAX whitelist).
+  The approve and reject actions are not whitelisted and also fail the capability check.
+- The outside system should use its own account with the service role and an application password. Cairn
+  currently signs in as an administrator; that works (admins hold the capability) but is more than it needs.
+
+### 15.5 Approving
+
+Screen: a **Proposed updates** tab (count badge) for every ledger viewer. Waiting proposals show order, TRX, PO,
+what is proposed, why (summary + evidence), and for approvers **Approve…** / **Reject…**. Below: decided in the
+last 7 days.
+
+Approve dialog: one quantity box per open line (pre-filled with the proposed quantity, or with everything left
+when the proposal names no lines, with a warning to check it), a "What happens when you approve" list stated as
+fact (recorded like UACP; Service Channel parts-shipped update when the order has an SC work order; completed
+when everything left ships), and "Email the customer this shipment update", **checked by default** because every
+UACP caller sends `notify: true`.
+
+Server side (`Ledger_Proposals::approve`):
+
+1. The proposal must be `pending`; the order must still be open; none of its tracking may already be on the
+   order (else it is closed as `superseded`); the confirmed lines must be open lines with quantity ≤ what is left,
+   and at least one must be above zero.
+2. Claim it (`pending` → `applying`).
+3. Call `POST musesys/v1/orders/{id}/ship-lines` **in-process** (`rest_do_request`) as the approving user, with
+   `closeout: false`. Nothing about recording a shipment is reimplemented; §6.2's `record_shipment()` extraction
+   was not needed and partial-ship was not touched. Side effects are therefore exactly the existing ones: order
+   note (customer-visible when notify is on), status recompute, `muse_send_sc_automation('parts_shipped')`.
+4. Success → `applied`, `result_json`, then `project()` so the row and its `shipment_recorded` event are current
+   in the response.
+5. Failure → back to `pending` with "Last attempt failed: …"; it can be retried or rejected. If the mutation
+   failed **after** saving (the completion guard throws when a TRX # is missing), the tracking is found on the
+   order and the proposal is `applied` with the warning kept in `status_note`.
+
+Reject needs a reason, which the filing system reads back.
+
+### 15.6 Events
+
+Order-scoped, in `musesys_ledger_events`, one per proposal per step (`dedupe_key = prop:{id}:{action}`, plus the
+attempt number for failures):
+
+| action | source | When |
+|---|---|---|
+| `proposal_received` | the filer's `source` | Filed (also when filed already-closed) |
+| `proposal_approved`, `proposal_rejected`, `proposal_failed` | `ledger_ui`, with the user | A person decided, or an approval failed |
+| `proposal_withdrawn` | the filer's `source` | Withdrawn over REST |
+| `proposal_superseded` | `projector` | Closed by housekeeping |
+
+Approvals and rejections are `ledger_ui` events, so they count in "Actions today" and in the digest's
+previous-business-day tile. The per-user table (emails / calls / ETAs / notes) is unchanged.
+
+### 15.7 Housekeeping
+
+`Ledger_Proposals::settle()` runs before every list (screen and REST):
+
+- `applying` for more than 10 minutes (the approving request died): tracking on the order → `applied`; not on
+  the order → `pending` again.
+- `pending` whose tracking a person has since typed in, or whose order is no longer open → `superseded`.
+
+It is not on a schedule: a proposal nobody lists stays as it is until someone or something lists.
+
+### 15.8 Verification performed (2026-11-23, PHP 8.3.16, MySQL 8.4.3 scratch instance on port 3399)
+
+| Check | Result |
+|---|---|
+| `php tests/proposals_test.php` (pure: validation, tracking comparison, line suggestion and confirmation) | 13 passed, 0 failed |
+| `php tests/proposals_integration_test.php` (real schema, proposals, projector and events code against MySQL; the ship-lines call replaced by a stand-in that edits the stub order) | 18 passed, 0 failed |
+| Existing suite: resolver 24, projector 12, audit 8, coming_due 9, digest 6, integration 16 | all pass; 75 → 106 tests in total |
+| Deliberate breakage: guarded status update removed → 10 cases fail; duplicate-tracking check removed → its case fails | tests catch both |
+| `php -l` on every module file; `node --check assets/ledger.js` | clean |
+
+Test changes to existing files: the stand-ins and DB connection moved unchanged from `integration_test.php` into
+`tests/harness.php` (shared by both SQL-level tests); `integration_test.php` now drops the proposals table too
+and asserts the schema version against `Ledger_Schema::VERSION` instead of the literal `1.0.0`.
+
+### 15.9 Not verified, not done
+
+- **Nothing here has run inside WordPress.** Not exercised: route registration and the REST permission check,
+  the AJAX handlers, the nonce, `dbDelta` on the real table, the role / capability registration, and the screen
+  (the tab, both dialogs and the history entries have never been rendered).
+- **The in-process `ship-lines` call is untested.** `rest_do_request` with a JSON body is how the endpoint is
+  reached from PHP, but whether its argument validation, permission callback and exceptions behave as assumed
+  needs one approval on staging. The "saved, then failed" path rests on the §2 description of the completion guard.
+- **Not deployed anywhere.** Production and the staging clone run `musesys-mega`; the copy of this module under
+  `legacy/musesys-mega/` was not changed and no longer matches this one.
+- **HPOS.** Production has HPOS on. The module reads and writes through `WC_Order` only, but that was not run.
+- **The Cairn side is not built**: nothing files proposals yet.
+- **Decisions still open:** who gets `musesys_ledger_approve`; whether the "email the customer" box should
+  start checked; whether `settle()` should also run on the 15-minute reconcile.
+- No holiday calendar, no per-user approval counts, no proposal for TRX #, PO # or ETA.

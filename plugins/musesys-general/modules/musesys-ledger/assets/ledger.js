@@ -5,7 +5,7 @@
   var app = document.getElementById('muse-ledger-app');
   if (!app) return;
 
-  var state = { data: null, tab: 'work', open: {}, busy: false };
+  var state = { data: null, proposals: null, tab: 'work', open: {}, busy: false };
 
   var STATE_LABEL = {
     CALL_REQUIRED: 'Call required', NEEDS_ETA: 'Needs ETA', SHIPPED_NOT_CLOSED: 'Shipped / not closed',
@@ -23,8 +23,12 @@
   var ACTION_LABEL = {
     email_logged: 'Email logged', call_logged: 'Call logged', note: 'Note', eta_set: 'ETA set',
     eta_changed: 'ETA changed', trx_assigned: 'TRX assigned', shipment_recorded: 'Shipment recorded',
-    state_changed: 'State changed'
+    state_changed: 'State changed',
+    proposal_received: 'Update proposed', proposal_approved: 'Proposed update approved',
+    proposal_rejected: 'Proposed update rejected', proposal_withdrawn: 'Proposed update withdrawn',
+    proposal_superseded: 'Proposed update closed', proposal_failed: 'Proposed update could not be recorded'
   };
+  var PROP_STATUS = { pending: 'Waiting', applying: 'Being recorded', applied: 'Approved', rejected: 'Rejected', superseded: 'Closed' };
   var AGENT_TABS = [
     ['work', 'Work queue', function (r) { return r.actionable === 1; }],
     ['coming_due', 'Coming due', function (r) { return r.coming_due === 1; }]
@@ -82,7 +86,14 @@
 
   function load() {
     return post('musesys_ledger_list').then(function (d) { state.data = d; render(); })
+      .then(loadProposals)
       .catch(function (e) { app.innerHTML = '<h1>Ledger</h1><p class="ml-error">' + esc(e.message) + '</p>'; });
+  }
+
+  // Proposed updates (LEDGER_SPEC §15) load after the rows; a failure here never blocks the ledger.
+  function loadProposals() {
+    return post('musesys_ledger_proposals').then(function (d) { state.proposals = d; render(); })
+      .catch(function () { state.proposals = null; });
   }
 
   function visibleRows() {
@@ -125,7 +136,7 @@
   function render() {
     var d = state.data, s = d.summary;
     var tabs = currentTabs();
-    if (!tabs.some(function (t) { return t[0] === state.tab; })) {
+    if (state.tab !== 'proposals' && !tabs.some(function (t) { return t[0] === state.tab; })) {
       state.tab = 'work';
     }
     var h = '<h1>Ledger</h1>';
@@ -141,7 +152,12 @@
 
     h += '<div class="ml-tabs">' + tabs.map(function (t) {
       return '<button type="button" class="ml-tab' + (state.tab === t[0] ? ' is-active' : '') + '" data-tab="' + t[0] + '">' + esc(t[1]) + '</button>';
-    }).join('') + '</div>';
+    }).join('') + proposalsTab() + '</div>';
+
+    if (state.tab === 'proposals') {
+      app.innerHTML = h + proposalsHtml();
+      return;
+    }
 
     var gs = groups(visibleRows());
     if (!gs.length) {
@@ -157,6 +173,150 @@
       h += '</table></div>';
     }
     app.innerHTML = h;
+  }
+
+  /* ---------------- proposed updates (§15) ---------------- */
+
+  function proposalsTab() {
+    var p = state.proposals;
+    if (!p) return '';
+    var n = p.pending.length;
+    return '<button type="button" class="ml-tab ml-tab-prop' + (state.tab === 'proposals' ? ' is-active' : '') +
+      '" data-tab="proposals">Proposed updates' + (n ? ' <span class="ml-count">' + n + '</span>' : '') + '</button>';
+  }
+
+  function propOrderCells(p) {
+    var o = p.order || {};
+    var orderCell = o.edit_url ? '<a href="' + esc(o.edit_url) + '" target="_blank" rel="noopener">#' + p.order_id + '</a>' : '#' + p.order_id;
+    return '<td>' + orderCell + '</td><td class="ml-trx">' + esc(o.trx || '—') + '</td><td>' + esc(o.po_number || '—') + '</td>';
+  }
+
+  function propWhat(p) {
+    var pl = p.payload || {};
+    var carrier = pl.carrier === 'OTHER' && pl.other_carrier ? pl.other_carrier : pl.carrier;
+    return '<strong>Shipment</strong> · ' + esc(carrier || '') + '<br>' + (pl.tracking_numbers || []).map(esc).join('<br>');
+  }
+
+  function propWhy(p) {
+    var h = p.summary ? esc(p.summary) : '<span class="ml-muted">No summary given.</span>';
+    var ev = p.evidence || {}, bits = [];
+    Object.keys(ev).slice(0, 8).forEach(function (k) {
+      var v = ev[k];
+      if (v === null || typeof v === 'object') return;
+      bits.push(esc(k.replace(/_/g, ' ')) + ': ' + esc(v));
+    });
+    if (bits.length) h += '<div class="ml-muted">' + bits.join(' · ') + '</div>';
+    return h + '<div class="ml-muted">From ' + esc(p.source) + ' · ' + esc(fmt(p.created_at, true)) + '</div>';
+  }
+
+  function proposalsHtml() {
+    var p = state.proposals, canApprove = !!(p && p.can_approve);
+    if (!p) return '<p class="ml-empty">Proposed updates could not be loaded.</p>';
+    var h = '<p class="ml-muted">Updates another system has proposed for an open order. Nothing here has been applied. ' +
+      'Approving records it on the order the same way UACP does; rejecting leaves the order untouched.</p>';
+    if (!p.pending.length) {
+      h += '<p class="ml-empty">No proposed updates are waiting.</p>';
+    } else {
+      h += '<div class="ml-scroll"><table class="ml-table ml-props"><thead><tr><th>Order</th><th>TRX</th><th>PO</th><th>Proposed</th><th>Why</th><th>Status</th>' +
+        (canApprove ? '<th>Actions</th>' : '') + '</tr></thead><tbody>';
+      p.pending.forEach(function (x) {
+        h += '<tr>' + propOrderCells(x) + '<td>' + propWhat(x) + '</td><td>' + propWhy(x) + '</td>' +
+          '<td><span class="ml-badge b-prop-' + esc(x.status) + '">' + esc(PROP_STATUS[x.status] || x.status) + '</span>' +
+          (x.status_note ? '<div class="ml-reason">' + esc(x.status_note) + '</div>' : '') + '</td>';
+        if (canApprove) {
+          h += '<td class="ml-actions">' + (x.status === 'pending'
+            ? '<button type="button" class="button button-primary" data-act="prop-approve" data-prop="' + x.id + '">Approve…</button>' +
+              '<button type="button" class="button" data-act="prop-reject" data-prop="' + x.id + '">Reject…</button>'
+            : '<span class="ml-muted">In progress</span>') + '</td>';
+        }
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    if (p.recent.length) {
+      h += '<h2>Decided in the last 7 days</h2><div class="ml-scroll"><table class="ml-table ml-props"><thead><tr><th>Order</th><th>TRX</th><th>PO</th><th>Proposed</th><th>Outcome</th><th>By</th><th>When</th></tr></thead><tbody>';
+      p.recent.forEach(function (x) {
+        h += '<tr>' + propOrderCells(x) + '<td>' + propWhat(x) + '</td>' +
+          '<td><span class="ml-badge b-prop-' + esc(x.status) + '">' + esc(PROP_STATUS[x.status] || x.status) + '</span>' +
+          (x.status_note ? '<div class="ml-reason">' + esc(x.status_note) + '</div>' : '') + '</td>' +
+          '<td>' + esc(x.decided_by || (x.status === 'superseded' ? 'System' : '')) + '</td><td>' + esc(fmt(x.decided_at || x.updated_at, true)) + '</td></tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+    return h;
+  }
+
+  function findProposal(id) {
+    var list = (state.proposals && state.proposals.pending) || [];
+    return list.filter(function (x) { return x.id === id; })[0];
+  }
+
+  function approveDialog(id) {
+    var p = findProposal(id);
+    if (!p) return;
+    var o = p.order || {};
+    var html = '<h2>Approve shipment — Order #' + p.order_id + (o.trx ? ' · TRX ' + esc(o.trx) : '') + '</h2>' +
+      '<p>' + propWhat(p) + '</p><p class="ml-muted">' + (p.summary ? esc(p.summary) + ' · ' : '') + 'proposed by ' + esc(p.source) + '</p>';
+    if (!p.lines.length) {
+      html += '<p class="ml-error">Every line on this order is already fully shipped, so there is nothing to record. Reject this proposal instead.</p>';
+    } else {
+      html += '<table class="ml-prop-lines"><tr><th>Part</th><th>Left to ship</th><th>Ship now</th></tr>' + p.lines.map(function (l) {
+        return '<tr><td>' + esc(l.part_label) + '</td><td>' + l.remaining + ' of ' + l.qty_ordered + '</td>' +
+          '<td><input type="number" class="ml-ship-qty" data-item="' + l.order_item_id + '" data-max="' + l.remaining +
+          '" min="0" max="' + l.remaining + '" step="1" value="' + l.suggested + '"></td></tr>';
+      }).join('') + '</table>';
+      if (!(p.payload.lines || []).length) {
+        html += '<p class="ml-warn">The proposal does not say which lines shipped. Everything left is pre-filled: check it against the vendor notice.</p>';
+      }
+    }
+    html += '<div class="ml-effects"><strong>What happens when you approve</strong><ul>' +
+      '<li>The carrier and tracking are recorded on the order, the same way UACP records them.</li>' +
+      '<li>' + (p.has_sc_work_order
+        ? 'Service Channel will be sent a parts-shipped update for this order.<br><span class="ml-muted">Automatic for orders with a Service Channel work order.</span>'
+        : 'No Service Channel work order on this order, so no Service Channel update will be sent.') + '</li>' +
+      '<li class="ml-prop-close"></li></ul></div>' +
+      '<label class="ml-check"><input type="checkbox" name="notify_customer" value="1" checked> Email the customer this shipment update ' +
+      '<span class="ml-muted">(UACP always does)</span></label>';
+
+    var form = dialog(html, function (f) {
+      var lines = {};
+      Array.prototype.forEach.call(f.querySelectorAll('.ml-ship-qty'), function (i) {
+        var q = parseInt(i.value, 10) || 0;
+        if (q > 0) lines[i.dataset.item] = q;
+      });
+      return post('musesys_ledger_proposal_approve', {
+        id: id, lines: JSON.stringify(lines), notify_customer: f.notify_customer.checked ? '1' : '0'
+      }).then(function (r) { toast(r.message || 'Shipment recorded'); return r; });
+    });
+    var submit = form.querySelector('.ml-submit');
+    submit.textContent = 'Approve and record';
+    function closing() {
+      var inputs = form.querySelectorAll('.ml-ship-qty'), all = inputs.length > 0, any = false;
+      Array.prototype.forEach.call(inputs, function (i) {
+        var q = parseInt(i.value, 10) || 0, max = +i.dataset.max;
+        if (q > 0) any = true;
+        if (q < max) all = false;
+      });
+      submit.disabled = !any;
+      form.querySelector('.ml-prop-close').innerHTML = !any ? 'Enter a quantity on at least one line.'
+        : all ? 'This ships everything left on the order, so the order will be marked completed (unless a required TRX # or PO # is missing).'
+        : 'Some quantity stays open, so the order will show as partially shipped.';
+    }
+    form.addEventListener('input', closing);
+    closing();
+  }
+
+  function rejectDialog(id) {
+    var p = findProposal(id);
+    if (!p) return;
+    var html = '<h2>Reject proposed update — Order #' + p.order_id + '</h2><p>' + propWhat(p) + '</p>' +
+      '<p class="ml-muted">The order is not changed. ' + esc(p.source) + ' is told this was rejected and why.</p>' +
+      '<label>Reason<textarea name="reason" rows="3" maxlength="500" required></textarea></label>';
+    var form = dialog(html, function (f) {
+      return post('musesys_ledger_proposal_reject', { id: id, reason: f.reason.value })
+        .then(function (r) { toast('Proposal rejected'); return r; });
+    });
+    form.querySelector('.ml-submit').textContent = 'Reject';
   }
 
   function chip(label, n, cls) {
@@ -323,6 +483,12 @@
                  (p.reason ? ' <span class="ml-muted">' + esc(REASON[p.reason] || p.reason) + '</span>' : '') +
                  (p.cause === 'resolver_upgrade' ? ' <span class="ml-muted">(rule update)</span>' : '') +
                  (p.confirmed_at_approx ? ' <span class="ml-muted">(based on estimated confirmation time)</span>' : ''); break;
+      case 'proposal_received': case 'proposal_approved': case 'proposal_rejected':
+      case 'proposal_withdrawn': case 'proposal_superseded': case 'proposal_failed':
+        detail = esc((p.carrier || '') + (p.tracking_numbers && p.tracking_numbers.length ? ' · ' + p.tracking_numbers.join(', ') : '')) +
+                 (p.from ? ' <span class="ml-muted">from ' + esc(p.from) + '</span>' : '') +
+                 (p.notified_customer ? ' · customer emailed' : '') +
+                 (p.note ? '<br><span class="ml-muted">' + esc(p.note) + '</span>' : ''); break;
     }
     return '<li class="ev-' + esc(e.action) + '"><div class="ml-ev-head"><span>' + esc(fmt(e.created_at, true)) + '</span> <strong>' + esc(e.actor) + '</strong>' +
       (e.scope === 'order' ? ' <span class="ml-muted">order</span>' : '') + '</div>' +
@@ -438,6 +604,8 @@
     var act = t.dataset.act;
     if (!act) return;
     var oid = +t.dataset.order;
+    if (act === 'prop-approve') { approveDialog(+t.dataset.prop); return; }
+    if (act === 'prop-reject') { rejectDialog(+t.dataset.prop); return; }
     if (act === 'eta') etaDialog(oid, +t.dataset.id);
     else if (act === 'line-note') {
       var row = state.data.rows.filter(function (r) { return r.id === +t.dataset.id; })[0];

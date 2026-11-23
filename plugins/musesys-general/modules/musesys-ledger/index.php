@@ -3,7 +3,7 @@
  * Module Name: MuseSys Ledger
  * Description: Fulfillment-obligation ledger — current-state projection of order lines, immutable
  *              activity log, and a locked-down agent workspace. Spec: LEDGER_SPEC.md (repo root).
- * Version: 1.0.2
+ * Version: 1.1.0
  * Author: MuseSystems
  */
 
@@ -21,6 +21,9 @@ require_once $musesys_ledger_dir . 'class-ledger-ajax.php';
 require_once $musesys_ledger_dir . 'class-ledger-page.php';
 require_once $musesys_ledger_dir . 'class-ledger-digest.php';
 require_once $musesys_ledger_dir . 'class-ledger-audit.php';
+require_once $musesys_ledger_dir . 'class-ledger-proposals.php';
+require_once $musesys_ledger_dir . 'class-ledger-proposals-ajax.php';
+require_once $musesys_ledger_dir . 'class-ledger-rest.php';
 unset($musesys_ledger_dir);
 
 // Roles/lockdown must work even if WooCommerce is briefly unavailable.
@@ -33,4 +36,6 @@ if (class_exists('WooCommerce')) {
     Ledger_Ajax::init();
     Ledger_Page::init();
     Ledger_Digest::init();
+    Ledger_Proposals_Ajax::init();
+    Ledger_Rest::init();
 }

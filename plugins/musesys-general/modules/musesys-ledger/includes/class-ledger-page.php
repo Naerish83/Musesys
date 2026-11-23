@@ -33,6 +33,7 @@ final class Ledger_Page {
             'ajax'       => admin_url('admin-ajax.php'),
             'nonce'      => wp_create_nonce(Ledger_Ajax::NONCE),
             'canManage'  => current_user_can(Ledger_Access::CAP_MANAGE),
+            'canApprove' => current_user_can(Ledger_Access::CAP_APPROVE),
             'agentView'  => Ledger_Access::is_locked_agent(),
             'tz'         => Ledger_State_Resolver::TZ,
             'today'      => (new DateTimeImmutable('now', new DateTimeZone(Ledger_State_Resolver::TZ)))->format('Y-m-d'),
