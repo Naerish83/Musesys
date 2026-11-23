@@ -271,7 +271,7 @@ final class Ledger_Ajax {
      * sends (muse-logistics-manager::apply_logistics, muse-email-manager::send_sc_automation).
      * Read-only: used to tell the user what will happen, never to decide whether it happens.
      */
-    private static function sc_info(WC_Order $order): array {
+    public static function sc_info(WC_Order $order): array {
         $has_sc = false;
         $wos = function_exists('muse_get_all_work_orders') ? (array) muse_get_all_work_orders($order->get_id()) : [];
         foreach ($wos as $wo) {

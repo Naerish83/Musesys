@@ -68,3 +68,15 @@
 .ml-modal-foot { text-align: right; margin-top: 12px; }
 .ml-toast { position: fixed; right: 20px; bottom: 20px; background: #1d2327; color: #fff; padding: 10px 16px; border-radius: 4px; z-index: 100001; }
 .ml-toast-bad { background: #b32d2e; }
+
+/* Proposed updates (LEDGER_SPEC §15) */
+.ml-tab .ml-count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #b32d2e; color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.ml-props td { max-width: 360px; overflow-wrap: anywhere; }
+.ml-badge.b-prop-pending { background: #fcf0e3; color: #b26200; }
+.ml-badge.b-prop-applying { background: #e7f2fa; color: #135e96; }
+.ml-badge.b-prop-applied { background: #e6f4ea; color: #1d7a3a; }
+.ml-badge.b-prop-rejected { background: #fbeaea; color: #b32d2e; }
+.ml-modal .ml-prop-lines { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.ml-modal .ml-prop-lines th, .ml-modal .ml-prop-lines td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid #f0f0f1; }
+.ml-modal .ml-prop-lines input { width: 70px; }
+.ml-modal .ml-warn { color: #b26200; font-size: 12px; }

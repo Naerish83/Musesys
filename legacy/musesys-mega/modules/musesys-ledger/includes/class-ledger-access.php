@@ -11,15 +11,19 @@ if (!defined('ABSPATH')) exit;
 final class Ledger_Access {
     const CAP_VIEW     = 'musesys_ledger_view';
     const CAP_MANAGE   = 'musesys_ledger_manage';
+    const CAP_PROPOSE  = 'musesys_ledger_propose';   // file proposals over REST (an outside system's account)
+    const CAP_APPROVE  = 'musesys_ledger_approve';   // approve / reject proposals on the ledger (§15.4)
     const ROLE_AGENT   = 'musesys_ledger_agent';
     const ROLE_VIEWER  = 'musesys_ledger_viewer';
-    const ROLES_VER    = '1';
+    const ROLE_SERVICE = 'musesys_ledger_service';
+    const ROLES_VER    = '2';
     const OPT_ROLES    = 'musesys_ledger_roles_version';
     const PAGE         = 'musesys-ledger';
 
     const AJAX_WHITELIST = [
         'musesys_ledger_list', 'musesys_ledger_history', 'musesys_ledger_log_email',
         'musesys_ledger_log_call', 'musesys_ledger_note', 'musesys_ledger_set_eta', 'heartbeat',
+        'musesys_ledger_proposals',   // read-only list; approve / reject are not whitelisted for the agent
     ];
 
     public static function init(): void {
@@ -55,6 +59,8 @@ final class Ledger_Access {
         $roles = [
             self::ROLE_AGENT  => ['Ledger Agent',  ['read' => true, self::CAP_VIEW => true, self::CAP_MANAGE => true]],
             self::ROLE_VIEWER => ['Ledger Viewer', ['read' => true, self::CAP_VIEW => true]],
+            // An outside system's account: may file and read proposals, nothing else. No Woo capabilities.
+            self::ROLE_SERVICE => ['Ledger Integration', ['read' => true, self::CAP_PROPOSE => true]],
         ];
         foreach ($roles as $slug => [$label, $caps]) {
             $role = get_role($slug);
@@ -68,6 +74,8 @@ final class Ledger_Access {
         if ($admin) {
             $admin->add_cap(self::CAP_VIEW);
             $admin->add_cap(self::CAP_MANAGE);
+            $admin->add_cap(self::CAP_PROPOSE);
+            $admin->add_cap(self::CAP_APPROVE);
         }
         update_option(self::OPT_ROLES, self::ROLES_VER, false);
     }

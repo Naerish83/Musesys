@@ -7,7 +7,7 @@
 if (!defined('ABSPATH')) exit;
 
 final class Ledger_Schema {
-    const VERSION        = '1.0.0';
+    const VERSION        = '1.1.0';
     const OPT_SCHEMA     = 'musesys_ledger_schema_version';
     const OPT_INSTALLED  = 'musesys_ledger_installed_at';
 
@@ -19,6 +19,12 @@ final class Ledger_Schema {
     public static function events_table(): string {
         global $wpdb;
         return $wpdb->prefix . 'musesys_ledger_events';
+    }
+
+    /** Proposed updates filed by outside systems (§15). */
+    public static function proposals_table(): string {
+        global $wpdb;
+        return $wpdb->prefix . 'musesys_ledger_proposals';
     }
 
     /** UTC 'Y-m-d H:i:s' of first install — the backfill/observed boundary for confirmed_at (§4.2). */
@@ -48,6 +54,7 @@ final class Ledger_Schema {
         $charset = $wpdb->get_charset_collate();
         $lt = self::ledger_table();
         $et = self::events_table();
+        $pt = self::proposals_table();
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -104,6 +111,30 @@ final class Ledger_Schema {
   KEY ledger_created (ledger_id,created_at),
   KEY action_created (action,created_at),
   KEY user_created (user_id,created_at)
+) $charset;");
+
+        dbDelta("CREATE TABLE $pt (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  source varchar(32) NOT NULL,
+  source_ref varchar(150) NOT NULL,
+  order_id bigint(20) unsigned NOT NULL,
+  kind varchar(24) NOT NULL,
+  payload_json longtext NOT NULL,
+  evidence_json longtext NOT NULL,
+  summary varchar(300) NULL,
+  status varchar(16) NOT NULL,
+  status_note varchar(500) NULL,
+  created_by bigint(20) unsigned NOT NULL DEFAULT 0,
+  decided_by bigint(20) unsigned NOT NULL DEFAULT 0,
+  decided_at datetime NULL,
+  result_json longtext NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY source_ref (source,source_ref),
+  KEY status_created (status,created_at),
+  KEY order_id (order_id),
+  KEY updated_at (updated_at)
 ) $charset;");
     }
 }
