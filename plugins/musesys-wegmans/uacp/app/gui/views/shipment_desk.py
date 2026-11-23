@@ -594,12 +594,18 @@ class ShipmentDeskView(ttk.Frame):
                     "lines": lines_to_ship,
                     "closeout": close_it_out,
                 }
-                self.bridge.ship_lines(data['id'], ship_payload)
+                # A refused shipment used to pass silently and "Saved" was shown.
+                if not self.bridge.ship_lines(data['id'], ship_payload):
+                    raise RuntimeError(
+                        "The shipment was NOT recorded on the order.\n" + self.bridge.ship_problem()
+                    )
 
             self.after(0, lambda: self._on_save_complete(data['id'], data['status']))
         except Exception as e:
             traceback.print_exc()
-            self.after(0, lambda: messagebox.showerror("Error", f"Save failed: {str(e)}"))
+            # Bind the text now: `e` is gone by the time the main thread runs the lambda.
+            reason = str(e)
+            self.after(0, lambda: messagebox.showerror("Error", f"Save failed: {reason}"))
             self.after(0, lambda: self.btn_save.config(state='normal'))
 
     def _on_save_complete(self, order_id, new_status):

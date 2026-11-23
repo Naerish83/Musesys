@@ -390,6 +390,14 @@ class MuseDataBridge:
             return self.client.ship_lines(order_id, payload)
         return False
 
+    def ship_problem(self) -> str:
+        """
+        Why the last ship_lines call returned False, in the site's words where it gave any.
+        """
+        if not self.client:
+            return "Not connected to the site."
+        return getattr(self.client, "last_ship_error", "") or "The site did not accept it."
+
     def upload_image_async(self, path: str, sku: str) -> Optional[int]:
         """
         Uploads an image, renaming it to {sku}.{ext}.

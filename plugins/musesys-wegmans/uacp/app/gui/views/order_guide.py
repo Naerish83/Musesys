@@ -257,6 +257,14 @@ class OrderGuideView(ttk.Frame):
                 success = self.bridge.ship_lines(order_no, payload)
                 if success:
                     self.after(0, lambda: self.sheet.highlight_cells(row=row, column=3, bg="#d4edda")) # Light green on success
+                else:
+                    # A refused shipment used to leave the cell as typed, with nothing said.
+                    reason = self.bridge.ship_problem()
+                    self.after(0, lambda: self.sheet.highlight_cells(row=row, column=3, bg="#f8d7da")) # Light red on failure
+                    self.after(0, lambda: messagebox.showerror(
+                        "Tracking not saved",
+                        f"Order #{order_no}: the shipment was NOT recorded on the order.\n{reason}"
+                    ))
             except Exception as e:
                 print(f"Failed to save tracking: {e}")
 

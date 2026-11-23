@@ -534,7 +534,7 @@ These are **not fixed** by this work. They are listed here because they affect l
 | # | State | Finding | Impact on ledger |
 |---|---|---|---|
 | R1 | HYPOTHESIS | `Muse_Partial_Ship_Plus::save_metabox` is hooked on **both** `save_post_shop_order` and `woocommerce_process_shop_order_meta` (`musesys-partial-ship/index.php:26,28`). On legacy (non-HPOS) storage, one save fires both hooks and the handler appends a shipment each time. Item quantities get clamped to what remains, but tracking numbers are not, which can leave a duplicate tracking-only shipment. | `tracking_count` could be inflated. To verify on staging, save one shipment and count the `_muse_shipments` entries. `qty_shipped` is safe because of the clamp. |
-| R2 | FACT | REST `ship-lines` builds shipment records **without** a `date` field (`index.php:706-711`). The metabox includes one. | Shipment events from the REST path cannot show a ship date. The projector records the `shipment_recorded` time when it sees the change. |
+| R2 | FACT | REST `ship-lines` builds shipment records **without** a `date` field (`index.php:711-716`). The metabox includes one. | Shipment events from the REST path cannot show a ship date. The projector records the `shipment_recorded` time when it sees the change. |
 | R3 | FACT | UACP's generic meta endpoint writes with `update_post_meta()` and fires no Woo order hooks. | Handled by the meta hooks in §4.1. If HPOS is on with sync disabled, these writes would not reach order meta at all. That is a separate investigation, not part of this lane. |
 | R4 | FACT | No business-day logic exists anywhere in the codebase. | The resolver owns it (§5.1). |
 
@@ -865,11 +865,126 @@ answer and marked the proposal `applied`. Fixed: the pre-check and the re-read i
 SQL-level cases and one unit case added; re-run on staging → refused with the reason, endpoint not reached, no
 new order note. The one proposal the first build mis-marked on staging was corrected by hand.
 
-**R5 (FACT for the first half, reading for the second; not fixed, separate lane).** The above is a property of the
+**R5 (FACT for the first half, reading for the second).** The above is a property of the
 existing `ship-lines` endpoint, so UACP is exposed to it too: shipping the last quantity of an order with no TRX #
 (or a drop-ship order with no PO #) reports success while the order keeps nothing. By the code, the endpoint then
 still fires `muse_send_sc_automation('parts_shipped')` when tracking was sent; that was not observed (the test
 order had no Service Channel work order).
+
+**R5 fix (2026-11-23, separate lane; in the working tree, not committed, not deployed, not run on staging).**
+
+*Mechanism, confirmed in the WooCommerce source* (`abstract-wc-order.php` and `class-wc-order.php`, tag 11.3.1,
+the version the site runs, read 2026-11-23; the reviewing session checked the same on the installed copy on the
+clone): `save()` fires `woocommerce_before_order_object_save` inside a `try`; an exception from a callback is
+caught there, nothing is written, and `save()` returns normally. Since WooCommerce 11.2.2 the exception is kept
+on the object (`get_last_save_error()`). The order notes are separate: `add_order_note()` writes at once, so the
+old handler's "New shipment added" note (and the customer e-mail, with `notify`) went out before the save that
+was then refused.
+
+*A refused completion is still announced (WooCommerce behaviour, not changed by this fix).* In 11.3.1
+`WC_Order::save()` is `parent::save(); $this->status_transition();` with no check of the save error. So after a
+refused completion the hooks `woocommerce_order_status_completed`, `..._to_completed` and
+`woocommerce_order_status_changed` fire, and the order gets the note "Order status changed from Processing to
+Completed.", while the stored status is unchanged. Seen on the clone: order 240035 (a refused completion from the
+morning of 2026-11-23, old code) carries "Failed to mark as complete...", "Error saving order ID 240035. TRX
+Order # must be entered..." and "Order status changed from Processing to Completed.", and is still `processing`.
+By the code this is true of every blocked completion, from the endpoint, the metabox or the order screen, with
+or without this fix, and so of production today if it runs the same WooCommerce as its clone (production's
+version was not checked). What listens:
+
+- WooCommerce's own "completed order" e-mail to the customer is triggered by that hook. **Whether that e-mail
+  is enabled on the site was not checked**, so whether customers get a "completed" e-mail for an order that did
+  not complete is open.
+- In this repository two listeners sit on `woocommerce_order_status_changed`: the activity tracker
+  (`adm_order_status`, which logs a status change that did not happen) and the ledger projector (`queue`, which
+  only queues the order id and reads the order later, so it records the stored status).
+- WooCommerce trunk (read the same day) has changed this: `save()` runs the status-change step only when
+  `get_last_save_error()` is null. A later WooCommerce update should therefore end the false announcement; the
+  earlier version of this section wrongly described that trunk behaviour as what the site does.
+
+*What changed in `musesys-partial-ship/index.php`:*
+
+- `rest_ship_lines()` now saves in two steps. **Step 1** saves the shipment alone, with the status untouched,
+  and reads the order back. If the shipment is not there the handler returns `WP_Error`
+  `muse_shipment_not_saved`, HTTP `409`, with the refusing callback's message, and stops: no order note, no
+  customer e-mail, no Service Channel update. **Step 2** applies the status (`closeout`, or the all-quantity-shipped
+  rule) in a second save. If that save is refused, the shipment stays; the answer is still `200`, built from the
+  order as stored, with two extra fields: `status_wanted` (`completed`) and `status_blocked` (the reason, e.g.
+  "TRX Order # must be entered before completing the order."). `status` is then the status the order really has.
+- After a refused status change the handler adds a **private order note**: "[Multi Shipment/API] The order was
+  NOT changed to Completed; it is still Processing. Reason: ... Any note saying the status changed to Completed is
+  wrong." It is written after WooCommerce's false "changed to Completed" note, so the order history ends on what
+  is true. Chosen over leaving the false note as a documented limitation: one note, no customer e-mail, and it
+  stays correct on WooCommerce trunk, where the false note no longer appears. It does not undo the hooks that
+  already fired (above).
+- Why two steps and not "check, then answer 409": the parts did ship. Losing the record because the order may
+  not complete yet is the worse outcome, and a `409` for a shipment that was kept would invite a retry, which
+  records the same tracking a second time (quantities are capped at what is left, tracking numbers are not).
+- Why the blocked order keeps its old status rather than moving to `partially-shipped`: that would be a new
+  status change with its own note and hooks, for an order where nothing is left to ship. It is a default, easy
+  to change (one line before the second save).
+- Service Channel is told when the shipment is in storage and carries tracking, whether or not the order
+  completed. Before, it was told even when nothing was saved.
+- Orders that may complete: same order note, same customer e-mail, same single status change, same response
+  keys, same Service Channel update, no extra note. The difference is one extra save when the status moves (the
+  ledger's `woocommerce_update_order` listener runs twice; it queues by order id).
+- `save_metabox()` had the same defect (shipment lost, Service Channel still told). Only the Service Channel half
+  is fixed there: it is now sent only for a shipment the order kept. **The metabox still loses the shipment when
+  completion is refused**; the admin sees the red "TRX Order # must be entered" notice, a "Shipment Dispatch"
+  note for a shipment that is not on the order, and WooCommerce's false "changed to Completed" note. The
+  correcting note is not added there.
+- New private helpers: `save_and_explain()` (the refusal reason from `get_last_save_error()`, else from the
+  error WooCommerce logs) and `shipment_stored()`. The second reads the order again and **counts**: the stored
+  list must hold the new shipment at least as often as the list just saved does. It no longer looks at one
+  position, so a shipment that another request stored in front of this one cannot turn a kept shipment into a
+  `409` (and a retry into a duplicate), and an identical earlier shipment cannot pass for one that was not saved.
+- Known limitation, older than this fix: the shipment list is one meta value, read, appended to and written
+  back with no lock. Two requests for the same order at the same moment can each write a list without the
+  other's shipment; the later write wins. The read-back catches that only if the other write lands before it.
+- `order-fields` (the guard) and the ledger module are unchanged. The ledger's up-front refusal (§15.5 step 1)
+  is no longer needed to protect the shipment, but it still stops an approval that could not complete; whether
+  to relax it is a ledger decision.
+
+*UACP* (`plugins/musesys-wegmans/uacp/app`): `api_client.ship_lines()` returns `False` for any non-200 and only
+printed the reason to the console. Shipment Desk and Active Orders ignored the result and showed "Saved" /
+"Order updated successfully"; Order Guide left the cell uncoloured. So a `409` would have been silent. Changed:
+the client keeps the site's message (`last_ship_error`, read through `bridge.ship_problem()`); Active Orders and
+Shipment Desk raise into their existing error dialogs ("The shipment was NOT recorded on the order." plus the
+reason); Order Guide colours the cell red and shows the same dialog. Shipment Desk's error dialog could never
+appear before (its lambda read the exception after Python had discarded it); that is fixed in the same edit.
+**Not changed:** UACP does not read the `200` body, so when a shipment is kept but completion is refused it
+still says "Status → completed" and then reloads the order, which shows the real status. The MCP tool
+`musesys_ship_lines` already raises on any error status and returns the body, `status_blocked` included.
+
+*Verified (local, PHP 8.3.16, Python 3.14.3):*
+
+| Check | Result |
+|---|---|
+| `php modules/musesys-partial-ship/tests/ship_lines_test.php` (new; the real `index.php` and the real guard from `order-fields`, against a stand-in order object that copies WooCommerce 11.3.1's refused-save behaviour, the status announcement after a refused save included; variants for before 11.2.2 and for trunk) | 23 passed, 0 failed |
+| The same file against `index.php` from before the fix (`PSP_FILE=`) | the 9 normal-path cases pass unchanged; the other 14 fail (false `completed`, no error, Service Channel told) |
+| The same file against three deliberately broken copies of the fix (kept outside the repository) | no correcting note → 2 cases fail; `shipment_stored()` at one exact position → the "another request's shipment" case fails; `shipment_stored()` matching anywhere without counting → the "identical earlier shipment" case fails |
+| `php -l` on `index.php` and both test files; the ledger's `proposals_test.php` | clean; 14 passed |
+| WooCommerce 11.3.1 on the clone, by the reviewing session: `get_last_save_error()` exists and is set only when nothing was persisted; `handle_exception()` logs with the context keys `order` and `error` that `save_and_explain()` reads | as the handler expects |
+| UACP: `py_compile` on the five edited files; `ship_lines()` and `ship_problem()` with `requests.post` replaced (200, 409 with and without a BOM, 500 without JSON, network failure) | compiled; 9 checks pass |
+
+*Not verified:*
+
+- **The fixed handler was not run against WordPress or WooCommerce.** The stand-in order is a model. A staging
+  run is needed for: a normal completion (order note, customer e-mail and status change once each, as before);
+  the last quantity of an order with no TRX # (shipment kept, `200` with `status_blocked`; expect WooCommerce's
+  "changed to Completed" note followed by the handler's "NOT changed to Completed" note, and the stored status
+  unchanged); an order that refuses every save (`409`, nothing written); the metabox; and an order with a
+  Service Channel work order, which has still never been exercised on staging.
+- Whether the customer "completed order" e-mail is enabled on the site, and so whether a refused completion
+  mails the customer (see above). On the clone all mail is blocked by `zz-staging-guard.php`, so a staging run
+  shows whether it is attempted, not whether production sends it.
+- That `wc_get_order()` after a save returns a fresh read on this site (HPOS on). If an object cache hands back
+  the same object, the handler relies on `get_last_save_error()` alone; the test covers that path in the model.
+- The UACP dialogs were not opened: no GUI run, no build. The three views were compiled, not exercised.
+- `C:\Projects\UACP` (the repository UACP releases were cut from, last commit 2026-09-30) was not touched; its
+  `api_client.py` was identical to this copy before the change.
+- **Production runs `musesys-mega`**, whose frozen copy (`legacy/musesys-mega/modules/musesys-partial-ship/index.php`,
+  byte-identical to this module before the fix) was not edited. It needs the same change at the next mega release.
 
 Test data left on the clone: 12 proposals (3 applied, 2 rejected, 7 superseded, 0 waiting), two test shipments
 on order 240019 (now partially shipped) and one on 240023 (now completed), all tagged `STAGING TEST`.

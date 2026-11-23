@@ -16,7 +16,8 @@ class MuseSysAPIClient:
         self.consumer_secret = consumer_secret
         self.wp_username = wp_username
         self.wp_app_password = wp_app_password
-        
+        self.last_ship_error = ""
+
         self.session = requests.Session()
         self._setup_auth()
 
@@ -318,21 +319,39 @@ class MuseSysAPIClient:
                 "consumer_secret": self.consumer_secret
             }
 
+        # Why the last call failed, for the caller to show. '' when it did not fail.
+        self.last_ship_error = ""
+
         try:
             # Direct requests.post to avoid header conflict
             response = requests.post(url, json=payload, params=params, headers=headers)
-            
+
             print(f"DEBUG: Ship Lines Response Code: {response.status_code}")
-            
+
             if response.status_code not in [200, 201]:
+                # Read the reason before printing: the print can itself fail on a console that
+                # cannot show the BOM WordPress sometimes sends, which would replace the reason.
+                self.last_ship_error = self._server_message(response)
                 print(f"DEBUG: Server Failure Message: {response.text}")
                 return False
-            
+
             response.raise_for_status()
             return True
         except Exception as e:
             print(f"CRITICAL SHIP ERROR: {e}")
+            if not self.last_ship_error:
+                self.last_ship_error = str(e)
             return False
+
+    def _server_message(self, response: requests.Response) -> str:
+        """The site's own explanation of a refusal (WordPress sends {"code", "message"}), else the HTTP status."""
+        try:
+            body = self._parse_json_response(response)
+            if isinstance(body, dict) and body.get("message"):
+                return str(body["message"])
+        except Exception:
+            pass
+        return f"The site answered HTTP {response.status_code}."
 
     def get_assets(self, store_id: str) -> List[Dict]:
         """

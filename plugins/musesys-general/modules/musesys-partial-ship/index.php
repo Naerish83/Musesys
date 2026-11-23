@@ -422,9 +422,11 @@ final class Muse_Partial_Ship_Plus {
 
         // Status already recomputed above
         $this->update_flat_status($order, $shipments);
-        $order->save();
+        $refused = $this->save_and_explain($order);
 
-        if (!empty($tracking_numbers)) {
+        // Service Channel is told only about a shipment the order kept. A refused save (completing an order
+        // with no TRX #) writes nothing, and this used to send the update anyway (LEDGER_SPEC.md §15.10, R5).
+        if (!empty($tracking_numbers) && $this->shipment_stored($order, $refused, $shipments, $new_shipment)) {
             do_action('muse_send_sc_automation', $order->get_id(), 'parts_shipped', array(
                 'shipment' => $new_shipment,
             ));
@@ -702,6 +704,9 @@ final class Muse_Partial_Ship_Plus {
         // Unlike metabox, API is explicit. If we send a payload, we process it.
         // If carrier is TECH_DELIVERY, we don't demand tracking numbers.
 
+        $status_before = $order->get_status();
+        $new_shipment  = null;
+
         if (!empty($new_items) || !empty($tracking_numbers) || ($is_internal && !empty($new_items))) {
             $new_shipment = array(
                 'carrier'          => $carrier,
@@ -719,6 +724,20 @@ final class Muse_Partial_Ship_Plus {
                 $order->update_meta_data(self::META_LATEST_TRACKING, $this->get_carrier_label($carrier));
             }
 
+            // Step 1 of 2: the shipment, saved on its own with the status untouched.
+            // A status change can be refused (an order with no TRX # may not complete), and a refused save
+            // writes nothing at all. Saved together, that refusal used to throw the shipment away while this
+            // handler still answered success (LEDGER_SPEC.md §15.10, R5).
+            $this->update_flat_status($order, $shipments);
+            $refused = $this->save_and_explain($order);
+            if (!$this->shipment_stored($order, $refused, $shipments, $new_shipment)) {
+                return new WP_Error(
+                    'muse_shipment_not_saved',
+                    'Shipment not recorded: ' . ($refused !== '' ? $refused : 'the order did not keep it. Check the order notes.'),
+                    array('status' => 409, 'order_id' => $order_id)
+                );
+            }
+
             $msg = '[Multi Shipment/API] New shipment added:' . "\n";
             if (!empty($new_items)) {
                 foreach ($new_items as $iid => $qty) {
@@ -734,37 +753,136 @@ final class Muse_Partial_Ship_Plus {
             $order->add_order_note($msg, $notify ? 1 : 0);
         }
 
+        // Step 2 of 2: the status. Skipped when a shipment was just saved and the status does not move.
+        $flat_before = $order->get_meta(self::META_SHIPPING_STATUS, true);
         if ($closeout) {
             $order->set_status('completed');
         } else {
             $this->recompute_status($order);
         }
-        
-        $this->update_flat_status($order, $shipments);
-        $order->save();
+        $wanted  = $order->get_status();
+        $refused = '';
+        if ($new_shipment === null || $wanted !== $status_before) {
+            $this->update_flat_status($order, $shipments);
+            $refused = $this->save_and_explain($order);
+        }
 
+        // Only reached with the shipment in storage (step 1 returned otherwise). It shipped whether or not
+        // the order could complete, so Service Channel is told either way.
         if (!empty($tracking_numbers)) {
             do_action('muse_send_sc_automation', $order->get_id(), 'parts_shipped', array(
                 'shipment' => $new_shipment,
             ));
         }
 
-        // Response
+        // Response: what the order holds, not what this request meant to write.
+        $view = wc_get_order($order_id);
+        if (!$view) $view = $order;
+        if ($view === $order && $refused !== '') {
+            // No independent copy to read (an object cache handed back the same object): put the refused
+            // change back so the answer below is what storage has.
+            $order->set_status($status_before);
+            $order->update_meta_data(self::META_SHIPPING_STATUS, $flat_before);
+        }
+        $stored = json_decode($view->get_meta(self::META_SHIPMENTS, true), true);
+        if (!is_array($stored)) $stored = array();
+
         $total = 0; $shipped_total = 0;
-        foreach ($order->get_items() as $item_id => $item) {
+        foreach ($view->get_items() as $item_id => $item) {
             $q = (int) $item->get_quantity();
-            $s = $this->get_shipped_qty($item_id, $shipments);
+            $s = $this->get_shipped_qty($item_id, $stored);
             $total += $q;
             $shipped_total += min($q, $s);
         }
-        return array(
-            'order_id'  => $order->get_id(),
-            'status'    => $order->get_status(),
+        $out = array(
+            'order_id'  => $view->get_id(),
+            'status'    => $view->get_status(),
             'shipped'   => $shipped_total,
             'total'     => $total,
-            'shipments' => $shipments,
-            'flat_status' => $order->get_meta(self::META_SHIPPING_STATUS, true),
+            'shipments' => $stored,
+            'flat_status' => $view->get_meta(self::META_SHIPPING_STATUS, true),
         );
+        if ($view->get_status() !== $wanted) {
+            // The shipment is on the order; the status change was refused. Still a 200: answering an error
+            // here would invite a retry, and a retry would record the same tracking a second time.
+            $why = $refused !== '' ? $refused : 'The order refused the status change. Check the order notes.';
+            $out['status_wanted']  = $wanted;
+            $out['status_blocked'] = $why;
+
+            // WooCommerce 11.3.1 runs its status-change step after a refused save too: the hooks fire and the
+            // order gets the note "Order status changed from X to Y." for a change that was not stored. This
+            // private note follows it so the order history ends on what is true.
+            $to = wc_get_order_status_name($wanted);
+            $order->add_order_note(sprintf(
+                '[Multi Shipment/API] The order was NOT changed to %1$s; it is still %2$s. Reason: %3$s Any note saying the status changed to %1$s is wrong.',
+                $to,
+                wc_get_order_status_name($view->get_status()),
+                $why
+            ), 0);
+        }
+        return $out;
+    }
+
+    /* -------------------- Truthful saving -------------------- */
+
+    /**
+     * Save the order and say why the save was refused ('' when nothing refused it).
+     *
+     * A callback on woocommerce_before_order_object_save may throw to refuse a save (order-fields does, for
+     * an order completed without a TRX #). WooCommerce catches that inside WC_Order::save(): nothing is
+     * written and save() returns normally. The reason comes from get_last_save_error() (WooCommerce 11.2.2+),
+     * otherwise from the error WooCommerce logs.
+     */
+    private function save_and_explain($order) {
+        $logged = '';
+        $listen = function ($message, $level = '', $context = array()) use (&$logged, $order) {
+            if (is_array($context) && isset($context['order'], $context['error'])
+                && $context['order'] === $order && $context['error'] instanceof Throwable) {
+                $logged = trim((string) $context['error']->getMessage());
+                if ($logged === '') $logged = 'The order refused the save.';
+            }
+            return $message;
+        };
+        add_filter('woocommerce_logger_log_message', $listen, 10, 3);
+        try {
+            $order->save();
+        } finally {
+            remove_filter('woocommerce_logger_log_message', $listen, 10);
+        }
+
+        if (method_exists($order, 'get_last_save_error')) {
+            $e = $order->get_last_save_error();
+            if (!($e instanceof Throwable)) return '';
+            $why = trim((string) $e->getMessage());
+            return $why !== '' ? $why : 'The order refused the save.';
+        }
+        return $logged;
+    }
+
+    /**
+     * True only when the save was not refused and the order, read again, holds this shipment.
+     *
+     * Counted, not looked up at one position: the stored list must hold this shipment at least as often as
+     * the list that was just saved ($saved) does. So a shipment another request slipped in ahead of it does
+     * not turn a stored shipment into an error, and an identical earlier shipment (the same tracking sent
+     * twice) does not make an unsaved one look stored.
+     */
+    private function shipment_stored($order, $refused, $saved, $shipment) {
+        if ($refused !== '') return false;
+        $fresh = wc_get_order($order->get_id());
+        if (!$fresh) return false;
+        $stored = json_decode($fresh->get_meta(self::META_SHIPMENTS, true), true);
+        if (!is_array($stored)) return false;
+
+        $want  = wp_json_encode($shipment);
+        $times = function ($list) use ($want) {
+            $n = 0;
+            foreach ($list as $one) {
+                if (wp_json_encode($one) === $want) $n++;
+            }
+            return $n;
+        };
+        return $times($stored) >= max(1, $times($saved));
     }
 
     /* -------------------- Frontend Tracking -------------------- */

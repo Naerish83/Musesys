@@ -1190,7 +1190,12 @@ class OrderOpsView(ttk.Frame):
                 "lines": lines_to_ship,
                 "closeout": close_it_out
             }
-             self.bridge.ship_lines(data['id'], ship_payload)
+             # A refused shipment used to pass silently and the caller reported success.
+             # Every caller wraps this in try/except and shows the message.
+             if not self.bridge.ship_lines(data['id'], ship_payload):
+                 raise RuntimeError(
+                     "The shipment was NOT recorded on the order.\n" + self.bridge.ship_problem()
+                 )
 
     def format_human_time(self, date_string):
         if not date_string: return ""
