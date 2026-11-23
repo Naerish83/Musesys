@@ -871,7 +871,7 @@ existing `ship-lines` endpoint, so UACP is exposed to it too: shipping the last 
 still fires `muse_send_sc_automation('parts_shipped')` when tracking was sent; that was not observed (the test
 order had no Service Channel work order).
 
-**R5 fix (2026-11-23, separate lane; committed as `bd5221e`, run on the staging clone the same day (results at the end of this section), NOT on production).**
+**R5 fix (2026-11-23, separate lane, tracker CC-11; committed as `bd5221e` and `d917e72`, run on the staging clone, and ON PRODUCTION since 2026-11-23 12:21 ET, see §15.11).**
 
 *Mechanism, confirmed in the WooCommerce source* (`abstract-wc-order.php` and `class-wc-order.php`, tag 11.3.1,
 the version the site runs, read 2026-11-23; the reviewing session checked the same on the installed copy on the
@@ -1073,7 +1073,7 @@ Also settled:
 - The staging clone was reset from production afterwards with `~/bin/sync-staging.sh --skip-uploads`, so it no
   longer holds the test data or the corrected handler.
 
-Still not run: UACP's dialogs; anything on production.
+Still not run: UACP's dialogs. On production only the unknown-order answer was exercised (§15.11).
 
 ### 15.11 Production (2026-11-23)
 
@@ -1082,7 +1082,13 @@ on Cole's go, with nothing allowed to send to it. Record, checks and rollback: C
 `docs/CC10_Ledger_Production_Release_Prep_2026-11-23.md` §9. Cole confirmed the ledger screen in a signed-in
 browser afterwards: the "Proposed updates" tab is there and empty.
 
-Production does **not** have the R5 fix: its `musesys-partial-ship/index.php` is the previous handler. The copy
+**The R5 fix was released the same day at 17:21 UTC (12:21 ET), on Cole's go:** the partial-ship module of
+`d917e72` (one changed file, `index.php`, and the two test files). Record, checks and rollback: Cairn repository,
+`docs/CC11_Ship_Lines_Production_Release_Prep_2026-11-23.md` §8. Checked afterwards without touching an order:
+the handler answers through the web server (`401` without credentials, `404` for an unknown order), no error
+logged. The no-TRX case was not exercised on production; it rests on the staging rehearsal.
+
+Before that release production ran the previous handler. The copy
 of the ledger under `legacy/musesys-mega/modules/musesys-ledger` in this repository was brought in line with
-production the same day (27 files, identical to `3d9b0ba`); `legacy/musesys-mega`'s partial-ship handler is still
-the previous one, as on production.
+production the same day (27 files, identical to `3d9b0ba`); `legacy/musesys-mega`'s partial-ship module was brought in line after
+the R5 release (identical to `d917e72`).
