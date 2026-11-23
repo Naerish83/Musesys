@@ -299,7 +299,7 @@
       });
       submit.disabled = !any;
       form.querySelector('.ml-prop-close').innerHTML = !any ? 'Enter a quantity on at least one line.'
-        : all ? 'This ships everything left on the order, so the order will be marked completed (unless a required TRX # or PO # is missing).'
+        : all ? 'This ships everything left on the order, so the order will be marked completed. If its TRX # (or a drop-ship PO #) is missing, the approval is refused until that is entered.'
         : 'Some quantity stays open, so the order will show as partially shipped.';
     }
     form.addEventListener('input', closing);

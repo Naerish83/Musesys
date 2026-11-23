@@ -227,6 +227,26 @@ final class Ledger_Proposals {
         return true;
     }
 
+    /**
+     * Shipping everything left completes the order, and an order with no TRX # (or a drop-ship order
+     * with no PO #) refuses to complete: its whole save is thrown away, shipment included, while the
+     * ship-lines endpoint still answers success. So that approval is refused up front.
+     * Mirrors muse_block_order_completion_if_fields_missing (order-fields), read from the ledger row.
+     *
+     * @return string|null the reason, or null when the approval may go ahead
+     */
+    public static function completion_blocker(array $rows, array $confirmed): ?string {
+        if (!$rows || !self::ships_everything($rows, $confirmed)) return null;
+        $head = $rows[0];
+        if (trim((string) ($head['trx'] ?? '')) === '') {
+            return 'This would ship everything left and complete the order, but the order has no TRX #. Enter the TRX # on the order first, or ship less than everything.';
+        }
+        if ((int) ($head['is_drop_ship'] ?? 0) === 1 && trim((string) ($head['po_number'] ?? '')) === '') {
+            return 'This would ship everything left and complete the order, but this drop-ship order has no PO #. Enter the PO # on the order first, or ship less than everything.';
+        }
+        return null;
+    }
+
     /* ==================== storage ==================== */
 
     private static function now(): string {
@@ -404,6 +424,8 @@ final class Ledger_Proposals {
         }
         $lines = self::confirm_lines($rows, $requested);
         if (is_string($lines)) return ['ok' => false, 'message' => $lines, 'status' => 400];
+        $blocker = self::completion_blocker($rows, $lines);
+        if ($blocker !== null) return ['ok' => false, 'message' => $blocker, 'status' => 409];
 
         // Claim. A second approver, a reject or a withdraw now fails its own guarded transition.
         if (!self::transition($id, self::PENDING, self::APPLYING, ['decided_by' => $user_id, 'decided_at' => self::now()])) {
@@ -424,25 +446,26 @@ final class Ledger_Proposals {
             $res = $e->getMessage() !== '' ? $e->getMessage() : 'The shipment could not be recorded.';
         }
 
-        if (is_string($res)) {
-            // The mutation can fail after it saved (e.g. the completion guard). Trust the order, not the error.
-            $fresh    = wc_get_order($oid);
-            $recorded = $fresh ? self::already_recorded(self::shipments_of($fresh), $numbers) : [];
-            if (!$recorded) {
-                $attempt = self::failed_attempts($id) + 1;
-                self::transition($id, self::APPLYING, self::PENDING, [
-                    'status_note' => 'Last attempt failed: ' . $res, 'decided_by' => 0, 'decided_at' => null,
-                ]);
-                self::event($row, 'proposal_failed', 'ledger_ui', $user_id, ['note' => substr($res, 0, self::MAX_NOTE), 'attempt' => $attempt]);
-                return ['ok' => false, 'message' => 'Not recorded: ' . $res, 'status' => 502];
-            }
-            $res = ['warning' => $res];
+        // Believe the order, never the response. Seen on staging 2026-11-23: when the order refuses to
+        // save (WooCommerce swallows the exception), ship-lines still answers success with nothing stored.
+        // The reverse also happens: an error after the shipment was saved.
+        $fresh    = wc_get_order($oid);
+        $recorded = $fresh ? self::already_recorded(self::shipments_of($fresh), $numbers) : [];
+        if (count($recorded) !== count($numbers)) {
+            $why = is_string($res) ? $res : 'The order did not keep the shipment: its save was refused. Check the order notes.';
+            $attempt = self::failed_attempts($id) + 1;
+            self::transition($id, self::APPLYING, self::PENDING, [
+                'status_note' => 'Last attempt failed: ' . $why, 'decided_by' => 0, 'decided_at' => null,
+            ]);
+            self::event($row, 'proposal_failed', 'ledger_ui', $user_id, ['note' => substr($why, 0, self::MAX_NOTE), 'attempt' => $attempt]);
+            return ['ok' => false, 'message' => 'Not recorded: ' . $why, 'status' => 502];
         }
+        if (is_string($res)) $res = ['warning' => $res];
 
         self::transition($id, self::APPLYING, self::APPLIED, [
             'status_note' => isset($res['warning']) ? 'Recorded, with a warning: ' . $res['warning'] : null,
             'result_json' => wp_json_encode([
-                'order_status' => $res['status'] ?? null,
+                'order_status' => $fresh->get_status(),
                 'shipped'      => $res['shipped'] ?? null,
                 'total'        => $res['total'] ?? null,
                 'lines'        => $lines,

@@ -174,6 +174,7 @@ t('approve runs the shipment mutation with the confirmed lines and records the o
     eq(['applied', 9], [$p['status'], (int) $p['decided_by']]);
     eq(null, $p['status_note']);
     eq(true, json_decode($p['result_json'], true)['notified']);
+    eq('processing', json_decode($p['result_json'], true)['order_status'], 'status is read from the order, not from the response');
     eq([101 => 2, 102 => 0], shipped(5), 'the ledger projection follows the order');
     eq(1, n_events('proposal_approved'));
     eq(1, (int) $GLOBALS['wpdb']->get_var("SELECT COUNT(*) FROM mlt_musesys_ledger_events WHERE order_id = 5 AND action = 'shipment_recorded'"));
@@ -223,6 +224,39 @@ t('if the mutation saved the shipment and then failed, the proposal is applied w
     eq('applied', $p['status']);
     ok(str_contains($p['status_note'], 'TRX # is required'), 'warning kept: ' . $p['status_note']);
     eq([101 => 5, 102 => 1], shipped(7));
+});
+
+t('a success answer that left nothing on the order is a failure (seen on staging: the save was refused)', function () {
+    order_fixture(11);
+    $id  = (int) Ledger_Proposals::create(proposal(11, 'k1'), 77)['proposal']['id'];
+    $lie = fn(int $oid, array $body) => ['order_id' => $oid, 'status' => 'completed', 'shipped' => 6, 'total' => 6];
+    $res = Ledger_Proposals::approve($id, [11101 => 1], true, 9, $lie);
+    eq([false, 502], [$res['ok'], $res['status']]);
+    $p = prop($id);
+    eq(['pending', 0], [$p['status'], (int) $p['decided_by']]);
+    ok(str_contains($p['status_note'], 'did not keep the shipment'), $p['status_note']);
+    eq(null, $p['result_json']);
+    eq([101 => 0, 102 => 0], shipped(11));
+    eq(1, (int) $GLOBALS['wpdb']->get_var("SELECT COUNT(*) FROM mlt_musesys_ledger_events WHERE order_id = 11 AND action = 'proposal_failed'"));
+    eq(0, (int) $GLOBALS['wpdb']->get_var("SELECT COUNT(*) FROM mlt_musesys_ledger_events WHERE order_id = 11 AND action = 'proposal_approved'"));
+});
+
+t('shipping everything left on an order with no TRX # is refused before the mutation runs', function () {
+    $o = order_fixture(12);
+    $o->meta['_trx_order_number'] = '';
+    Ledger_Projector::project(12);
+    $id     = (int) Ledger_Proposals::create(proposal(12, 'l1'), 77)['proposal']['id'];
+    $called = false;
+    $spy    = function (int $oid, array $body) use (&$called) { $called = true; return 'should not run'; };
+    $res    = Ledger_Proposals::approve($id, [12101 => 5, 12102 => 1], true, 9, $spy);
+    eq([false, 409], [$res['ok'], $res['status']]);
+    ok(str_contains($res['message'], 'no TRX #'), $res['message']);
+    eq(false, $called, 'the mutation must not be called');
+    eq('pending', prop($id)['status']);
+    // Less than everything is still allowed on that order.
+    $res = Ledger_Proposals::approve($id, [12101 => 2], true, 9, ship_ok());
+    eq(true, $res['ok'], $res['message']);
+    eq([101 => 2, 102 => 0], shipped(12));
 });
 
 t('two approvals cannot both claim a proposal', function () {
@@ -295,8 +329,7 @@ echo "\nreads\n";
 
 t('query filters by status and source, and lists changes oldest-first for a poller', function () {
     $pending = Ledger_Proposals::query(['status' => 'pending']);
-    eq(1, count($pending));
-    eq('a1', $pending[0]['source_ref']);
+    eq(['k1', 'a1'], array_column($pending, 'source_ref'), 'newest first: the failed approval (k1) is still waiting');
     eq([], Ledger_Proposals::query(['status' => 'nonsense']));
     eq([], Ledger_Proposals::query(['source' => 'someone-else']));
     $all = Ledger_Proposals::query(['updated_since' => '2000-01-01 00:00:00', 'limit' => 500]);

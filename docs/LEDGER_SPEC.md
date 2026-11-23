@@ -657,9 +657,9 @@ Enables the locked agent to view on-track orders due within the next 2 business 
 
 ## 15. Proposed updates from an outside system (added 2026-11-23)
 
-Status: **BUILT, not deployed.** Unit- and SQL-level tests pass (§15.8). Nothing in this section has run inside
-WordPress yet (§15.9). Built in `plugins/musesys-general/modules/musesys-ledger/` only; production runs
-`musesys-mega` 1.2.11 and does not have it.
+Status: **BUILT, run on the staging clone 2026-11-23 (§15.10), not on production.** Unit- and SQL-level tests
+pass (§15.8). Built in `plugins/musesys-general/modules/musesys-ledger/`; production runs `musesys-mega` 1.2.11 and
+does not have it. The staging run found one defect in the approval, fixed the same day (§15.5 steps 1 and 4).
 
 ### 15.1 Rule
 
@@ -761,17 +761,22 @@ Server side (`Ledger_Proposals::approve`):
 
 1. The proposal must be `pending`; the order must still be open; none of its tracking may already be on the
    order (else it is closed as `superseded`); the confirmed lines must be open lines with quantity ≤ what is left,
-   and at least one must be above zero.
+   and at least one must be above zero. **If the confirmed lines ship everything left and the order has no TRX #
+   (or is drop-ship with no PO #), the approval is refused (`409`) before anything runs**
+   (`completion_blocker()`, mirroring `muse_block_order_completion_if_fields_missing`): that order cannot
+   complete, and its refused save would throw the shipment away (R5, §15.10). Shipping less than everything on
+   such an order is still allowed.
 2. Claim it (`pending` → `applying`).
 3. Call `POST musesys/v1/orders/{id}/ship-lines` **in-process** (`rest_do_request`) as the approving user, with
    `closeout: false`. Nothing about recording a shipment is reimplemented; §6.2's `record_shipment()` extraction
    was not needed and partial-ship was not touched. Side effects are therefore exactly the existing ones: order
    note (customer-visible when notify is on), status recompute, `muse_send_sc_automation('parts_shipped')`.
-4. Success → `applied`, `result_json`, then `project()` so the row and its `shipment_recorded` event are current
-   in the response.
-5. Failure → back to `pending` with "Last attempt failed: …"; it can be retried or rejected. If the mutation
-   failed **after** saving (the completion guard throws when a TRX # is missing), the tracking is found on the
-   order and the proposal is `applied` with the warning kept in `status_note`.
+4. **The order decides, not the response.** After the call the order is re-read: only when every proposed
+   tracking number is on it is the proposal `applied` (`result_json` takes the order's real status), followed by
+   `project()` so the row and its `shipment_recorded` event are current in the response.
+5. Tracking not on the order → back to `pending` with "Last attempt failed: …", whatever the endpoint answered;
+   it can be retried or rejected. An error answer with the tracking on the order → `applied`, the error kept as a
+   warning in `status_note`.
 
 Reject needs a reason, which the filing system reads back.
 
@@ -804,9 +809,9 @@ It is not on a schedule: a proposal nobody lists stays as it is until someone or
 
 | Check | Result |
 |---|---|
-| `php tests/proposals_test.php` (pure: validation, tracking comparison, line suggestion and confirmation) | 13 passed, 0 failed |
-| `php tests/proposals_integration_test.php` (real schema, proposals, projector and events code against MySQL; the ship-lines call replaced by a stand-in that edits the stub order) | 18 passed, 0 failed |
-| Existing suite: resolver 24, projector 12, audit 8, coming_due 9, digest 6, integration 16 | all pass; 75 → 106 tests in total |
+| `php tests/proposals_test.php` (pure: validation, tracking comparison, line suggestion and confirmation, completion blocker) | 14 passed, 0 failed |
+| `php tests/proposals_integration_test.php` (real schema, proposals, projector and events code against MySQL; the ship-lines call replaced by a stand-in that edits the stub order) | 20 passed, 0 failed |
+| Existing suite: resolver 24, projector 12, audit 8, coming_due 9, digest 6, integration 16 | all pass; 75 → 109 tests in total |
 | Deliberate breakage: guarded status update removed → 10 cases fail; duplicate-tracking check removed → its case fails | tests catch both |
 | `php -l` on every module file; `node --check assets/ledger.js` | clean |
 
@@ -816,16 +821,55 @@ and asserts the schema version against `Ledger_Schema::VERSION` instead of the l
 
 ### 15.9 Not verified, not done
 
-- **Nothing here has run inside WordPress.** Not exercised: route registration and the REST permission check,
-  the AJAX handlers, the nonce, `dbDelta` on the real table, the role / capability registration, and the screen
-  (the tab, both dialogs and the history entries have never been rendered).
-- **The in-process `ship-lines` call is untested.** `rest_do_request` with a JSON body is how the endpoint is
-  reached from PHP, but whether its argument validation, permission callback and exceptions behave as assumed
-  needs one approval on staging. The "saved, then failed" path rests on the §2 description of the completion guard.
-- **Not deployed anywhere.** Production and the staging clone run `musesys-mega`; the copy of this module under
-  `legacy/musesys-mega/` was not changed and no longer matches this one.
-- **HPOS.** Production has HPOS on. The module reads and writes through `WC_Order` only, but that was not run.
+- **The three AJAX endpoints have not been called over HTTP** (`admin-ajax.php` with a real nonce and cookie).
+  Their handlers' logic ran on staging through the same methods, and the screen script was rendered against
+  real staging data in a local page (§15.10), but nobody has yet clicked Approve in a signed-in browser.
+- **Not on production.** Production runs `musesys-mega` without this module. The staging clone has it (copied
+  into `musesys-mega/modules/musesys-ledger`); the next `~/bin/sync-staging.sh` run will overwrite it with
+  production's copy. The copy under `legacy/musesys-mega/` in this repository was not changed.
+- **A dedicated service account was not created.** The HTTP run used Cairn's existing administrator
+  application password. The `musesys_ledger_service` role exists and has exactly `read` + propose, but no user
+  holds it, so "a service-role user can file and nothing else" is untested end to end.
+- **A real Service Channel order was not approved.** The test orders had no SC work order; that the
+  parts-shipped update goes out (and is blocked on staging) rests on reading the code.
 - **The Cairn side is not built**: nothing files proposals yet.
 - **Decisions still open:** who gets `musesys_ledger_approve`; whether the "email the customer" box should
   start checked; whether `settle()` should also run on the 15-minute reconcile.
 - No holiday calendar, no per-user approval counts, no proposal for TRX #, PO # or ETA.
+
+### 15.10 Staging run (2026-11-23, clone `rxdetsjact`, WordPress 7.1.5, WooCommerce 11.3.1, PHP 8.2.36, HPOS on)
+
+Mail and webhooks on the clone are blocked by `zz-staging-guard.php` (own database, checked before every write).
+The previous module is kept at `private_html/ledger-backups/musesys-ledger-pre-d493e87-20261123-1435.tgz`.
+
+| Check | Result |
+|---|---|
+| Deploy over the existing module; server-side `php -l` on 25 files | clean; deployed tree identical to the commit |
+| Install on the first request | schema `1.0.0` → `1.1.0`, proposals table with all 16 columns and the unique (`source`, `source_ref`) key; roles version `1` → `2`; existing 646 ledger rows / 3,777 events untouched |
+| Roles | service role = `read` + propose only; agent = view + manage (no approve, no propose); administrator has all four |
+| Routes and handlers | 4 REST routes and 3 AJAX actions registered; `ship-lines` present |
+| Permission | signed-out `401`; ledger agent `403` on read and on file; agent has view, not approve |
+| File, re-file, bad input, unknown order | `201` pending; `200` with the stored proposal; `400`; `404`; order untouched |
+| Reject, withdraw, second withdraw | reason read back by the filer; `200` superseded; `409` |
+| **Approve through the real in-process `ship-lines` call** (1 of 8, e-mail off) | shipment on the order with the proposed carrier and tracking; order `partially-shipped`; ledger row +1; `proposal_approved` + `shipment_recorded` events; no e-mail attempted |
+| Approve with the e-mail box on | "Update: Partial Shipment" customer e-mail attempted and **blocked by the staging guard** |
+| Approve everything left on a confirmed order | order `completed`, ledger rows `CLOSED`, a second waiting proposal on it closed by housekeeping |
+| Tracking already on the order | filed `superseded`; an applied proposal cannot be approved again (`409`) |
+| **Real HTTPS from Cairn #2** with its stored application password | no credentials `401`, wrong password `401`, sign-in `200`; `open-orders` 80 orders (38.7 kB, no BOM); file `201`, re-file `200`, poll by status and by `updated_since`, withdraw `200`, bad input a readable `400` |
+| Screen (the shipped `ledger.js` + `ledger.css` in a local page fed with the payloads captured from staging; not a signed-in session) | tab with count badge, waiting and decided tables, Approve dialog (per-line quantities, effects text, submit disabled at zero), Reject dialog, proposal entries in a row's history; the posted parameters are what the handlers read; no script errors |
+
+**Defect found and fixed.** Approving everything left on an order with **no TRX #**: the completion guard throws
+inside `woocommerce_before_order_object_save`, WooCommerce swallows it, **nothing is saved** (no shipment, status
+unchanged), and `ship-lines` still answers success with its in-memory "completed". The first build believed the
+answer and marked the proposal `applied`. Fixed: the pre-check and the re-read in §15.5 steps 1 and 4; two
+SQL-level cases and one unit case added; re-run on staging → refused with the reason, endpoint not reached, no
+new order note. The one proposal the first build mis-marked on staging was corrected by hand.
+
+**R5 (FACT for the first half, reading for the second; not fixed, separate lane).** The above is a property of the
+existing `ship-lines` endpoint, so UACP is exposed to it too: shipping the last quantity of an order with no TRX #
+(or a drop-ship order with no PO #) reports success while the order keeps nothing. By the code, the endpoint then
+still fires `muse_send_sc_automation('parts_shipped')` when tracking was sent; that was not observed (the test
+order had no Service Channel work order).
+
+Test data left on the clone: 12 proposals (3 applied, 2 rejected, 7 superseded, 0 waiting), two test shipments
+on order 240019 (now partially shipped) and one on 240023 (now completed), all tagged `STAGING TEST`.

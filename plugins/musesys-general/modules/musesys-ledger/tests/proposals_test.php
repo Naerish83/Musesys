@@ -153,4 +153,19 @@ t('ships_everything is true only when every open quantity is covered', function 
     eq(false, Ledger_Proposals::ships_everything(rows(), $some));
 });
 
+echo "\ncompletion guard\n";
+
+t('completion_blocker: only when everything left ships and the order cannot complete', function () {
+    $all  = Ledger_Proposals::confirm_lines(rows(), [11 => 3, 12 => 1]);
+    $some = Ledger_Proposals::confirm_lines(rows(), [11 => 3]);
+    $with = fn(array $over) => array_map(fn($r) => $r + $over, rows());
+    eq(null, Ledger_Proposals::completion_blocker($with(['trx' => '778812', 'po_number' => 'CH-123456', 'is_drop_ship' => 0]), $all), 'confirmed order');
+    ok(is_string(Ledger_Proposals::completion_blocker($with(['trx' => '', 'po_number' => 'CH-123456', 'is_drop_ship' => 0]), $all)), 'no TRX');
+    ok(is_string(Ledger_Proposals::completion_blocker($with(['trx' => null, 'po_number' => '', 'is_drop_ship' => 0]), $all)), 'null TRX');
+    eq(null, Ledger_Proposals::completion_blocker($with(['trx' => '', 'po_number' => '', 'is_drop_ship' => 1]), $some), 'a partial shipment never completes');
+    ok(is_string(Ledger_Proposals::completion_blocker($with(['trx' => '778812', 'po_number' => '', 'is_drop_ship' => 1]), $all)), 'drop-ship without PO');
+    eq(null, Ledger_Proposals::completion_blocker($with(['trx' => '778812', 'po_number' => '', 'is_drop_ship' => 0]), $all), 'stock order without PO is fine');
+    eq(null, Ledger_Proposals::completion_blocker([], $all), 'no rows');
+});
+
 done();
