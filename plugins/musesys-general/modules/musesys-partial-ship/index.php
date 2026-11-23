@@ -295,6 +295,10 @@ final class Muse_Partial_Ship_Plus {
         $order = wc_get_order($post_id);
         if (!$order) return;
 
+        // This box's notices are about the save before this one.
+        $this->clear_admin_notice('muse_psp_shipment_not_saved');
+        $this->clear_admin_notice('muse_psp_status_blocked');
+
         $shipments = json_decode($order->get_meta(self::META_SHIPMENTS, true), true);
         if (!is_array($shipments)) $shipments = array();
 
@@ -354,6 +358,7 @@ final class Muse_Partial_Ship_Plus {
         // We will stick to that. just ensuring we capture the carrier.
 
         if (!empty($new_items) || !empty($tracking_numbers) || ($is_internal && !empty($new_items))) {
+            $status_before = $order->get_status();
             $new_shipment = array(
                 'carrier'          => $carrier,
                 'other_carrier'    => $other_carrier,
@@ -372,15 +377,36 @@ final class Muse_Partial_Ship_Plus {
                  $order->update_meta_data(self::META_LATEST_TRACKING, $this->get_carrier_label($carrier));
             }
 
-            // Recompute status logic FIRST to decide on notification
+            // Step 1 of 2: the shipment, saved on its own with the status untouched, as rest_ship_lines() does.
+            // A refused save writes nothing. Saved together with the status, a refused completion (an order
+            // with no TRX #) used to throw the shipment away after the "Shipment Dispatch" note, and with
+            // "notify" the customer e-mail, had already gone out (LEDGER_SPEC.md §15.10, R5).
+            $this->update_flat_status($order, $shipments);
+            $refused = $this->save_and_explain($order);
+            if (!$this->shipment_stored($order, $refused, $shipments, $new_shipment)) {
+                // Nothing below may claim a dispatch: no note, no customer e-mail, no Service Channel update.
+                $this->admin_notice('muse_psp_shipment_not_saved', sprintf(
+                    'Order #%s: the shipment was NOT recorded. %s',
+                    $order->get_order_number(),
+                    $refused !== '' ? $refused : 'The order did not keep it. Check the order notes.'
+                ));
+                return;
+            }
+
+            // The status this shipment asks for. Set once and not set back: set_status() records the change
+            // and WooCommerce announces it at the next save.
             $this->recompute_status($order);
             $new_status = $order->get_status();
 
             // Notify Logic
             // If status is 'completed', WC sends its own email. We suppress the "Note" email to avoid duplicates.
             // But we will ensure the "Completed" email contains our details via the 'woocommerce_email_before_order_table' hook.
+            // "Completed" here means this shipment asks for completed, whether or not the order then accepts
+            // it. The note is written before the status is saved, where it always was, so a refusal is not
+            // known yet; and a blocked order is completed as soon as its missing field is entered, when the
+            // completed e-mail carries this shipment. Mailing the note as well would tell the customer twice.
             if ($new_status === 'completed' || $new_status === 'wc-completed') {
-                $notify = false; 
+                $notify = false;
             }
 
             // Msg Building (HTML)
@@ -417,19 +443,34 @@ final class Muse_Partial_Ship_Plus {
             }
             $msg .= '</p>';
 
+            // Only reached with the shipment in storage (step 1 returned otherwise).
             $order->add_order_note($msg, $notify ? 1 : 0);
-        }
 
-        // Status already recomputed above
-        $this->update_flat_status($order, $shipments);
-        $refused = $this->save_and_explain($order);
+            // Step 2 of 2: the status, when the shipment moves it.
+            $refused = '';
+            if ($new_status !== $status_before) {
+                $this->update_flat_status($order, $shipments);
+                $refused = $this->save_and_explain($order);
+            }
+            $actual = $this->stored_status($order, $refused, $status_before);
+            if ($actual !== $new_status) {
+                $why = $refused !== '' ? $refused : 'The order refused the status change. Check the order notes.';
+                $this->note_status_not_changed($order, $new_status, $actual, $why, 'Multi Shipment');
+                $this->admin_notice('muse_psp_status_blocked', sprintf(
+                    'Order #%s: the shipment was recorded, but the order was NOT changed to %s and is still %s. %s',
+                    $order->get_order_number(),
+                    wc_get_order_status_name($new_status),
+                    wc_get_order_status_name($actual),
+                    $why
+                ));
+            }
 
-        // Service Channel is told only about a shipment the order kept. A refused save (completing an order
-        // with no TRX #) writes nothing, and this used to send the update anyway (LEDGER_SPEC.md §15.10, R5).
-        if (!empty($tracking_numbers) && $this->shipment_stored($order, $refused, $shipments, $new_shipment)) {
-            do_action('muse_send_sc_automation', $order->get_id(), 'parts_shipped', array(
-                'shipment' => $new_shipment,
-            ));
+            // The parts shipped whether or not the order could complete, so Service Channel is told either way.
+            if (!empty($tracking_numbers)) {
+                do_action('muse_send_sc_automation', $order->get_id(), 'parts_shipped', array(
+                    'shipment' => $new_shipment,
+                ));
+            }
         }
     }
 
@@ -809,16 +850,7 @@ final class Muse_Partial_Ship_Plus {
             $out['status_wanted']  = $wanted;
             $out['status_blocked'] = $why;
 
-            // WooCommerce 11.3.1 runs its status-change step after a refused save too: the hooks fire and the
-            // order gets the note "Order status changed from X to Y." for a change that was not stored. This
-            // private note follows it so the order history ends on what is true.
-            $to = wc_get_order_status_name($wanted);
-            $order->add_order_note(sprintf(
-                '[Multi Shipment/API] The order was NOT changed to %1$s; it is still %2$s. Reason: %3$s Any note saying the status changed to %1$s is wrong.',
-                $to,
-                wc_get_order_status_name($view->get_status()),
-                $why
-            ), 0);
+            $this->note_status_not_changed($order, $wanted, $view->get_status(), $why, 'Multi Shipment/API');
         }
         return $out;
     }
@@ -883,6 +915,40 @@ final class Muse_Partial_Ship_Plus {
             return $n;
         };
         return $times($stored) >= max(1, $times($saved));
+    }
+
+    /** The status the order has in storage after a save that may have been refused. */
+    private function stored_status($order, $refused, $status_before) {
+        $fresh = wc_get_order($order->get_id());
+        if ($fresh && $fresh !== $order) return $fresh->get_status();
+        // No independent copy to read (an object cache handed back the same object).
+        return $refused !== '' ? $status_before : $order->get_status();
+    }
+
+    /**
+     * Private order note for a status change that was refused.
+     *
+     * WooCommerce 11.3.1 runs its status-change step after a refused save too: the hooks fire and the order
+     * gets the note "Order status changed from X to Y." for a change that was not stored. This note follows
+     * it so the order history ends on what is true.
+     */
+    private function note_status_not_changed($order, $wanted, $actual, $why, $source) {
+        $order->add_order_note(sprintf(
+            '[%4$s] The order was NOT changed to %1$s; it is still %2$s. Reason: %3$s Any note saying the status changed to %1$s is wrong.',
+            wc_get_order_status_name($wanted),
+            wc_get_order_status_name($actual),
+            $why,
+            $source
+        ), 0);
+    }
+
+    /** A notice for the next admin page, the way the completion guard in order-fields raises its own. */
+    private function admin_notice($name, $text) {
+        if (class_exists('WC_Admin_Notices')) WC_Admin_Notices::add_custom_notice($name, esc_html($text));
+    }
+
+    private function clear_admin_notice($name) {
+        if (class_exists('WC_Admin_Notices')) WC_Admin_Notices::remove_notice($name);
     }
 
     /* -------------------- Frontend Tracking -------------------- */

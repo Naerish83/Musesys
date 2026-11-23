@@ -74,6 +74,9 @@ class WP_Error {
 class WC_Admin_Notices {
     public static $notices = [];
     public static function add_custom_notice($name, $html) { self::$notices[] = [$name, $html]; }
+    public static function remove_notice($name) {
+        self::$notices = array_values(array_filter(self::$notices, function ($n) use ($name) { return $n[0] !== $name; }));
+    }
 }
 
 /* ---------------- The stand-in order ---------------- */
@@ -101,6 +104,7 @@ class WC_Order {
         $this->meta = self::$db[$this->id]['meta'];
     }
     public function get_id() { return $this->id; }
+    public function get_order_number() { return (string) $this->id; }
     public function get_status() { return $this->status; }
     public function set_status($s) {
         $new = preg_replace('/^wc-/', '', (string) $s);
@@ -507,37 +511,180 @@ t('an unknown order is still a 404', function () use ($psp) {
 
 echo "\nmetabox save\n";
 
-function metabox_post(array $ship, string $tracks): void {
-    $_POST = ['muse_psp_nonce' => 'x', 'muse_psp_ship' => $ship, 'muse_psp_carrier' => 'UPS', 'muse_psp_ship_tracks' => $tracks, 'muse_psp_notify' => '1'];
+/** The form as the order screen posts it. "Notify customer" is ticked unless $notify is false. */
+function metabox_post(array $ship, string $tracks, bool $notify = true): void {
+    $_POST = ['muse_psp_nonce' => 'x', 'muse_psp_ship' => $ship, 'muse_psp_carrier' => 'UPS', 'muse_psp_ship_tracks' => $tracks];
+    if ($notify) $_POST['muse_psp_notify'] = '1';
+}
+function notices_named(string $name): array {
+    return array_values(array_filter(WC_Admin_Notices::$notices, function ($n) use ($name) { return $n[0] === $name; }));
+}
+/** Position of the first note containing $needle, or -1. */
+function note_at(string $needle): int {
+    foreach (WC_Order::$notes as $i => $note) if (strpos($note[1], $needle) !== false) return $i;
+    return -1;
+}
+function customer_notes(): int {
+    return count(array_filter(WC_Order::$notes, function ($n) { return $n[2] === 1; }));
 }
 
-t('a shipment that completes the order: saved, Service Channel told (unchanged)', function () use ($psp) {
-    reset_world();
-    order(30, 'processing', ['_trx_order_number' => '12345678']);
-    metabox_post([11 => 2, 12 => 1], '1ZTEST30');
-    $psp->save_metabox(30, null);
-    eq('completed', WC_Order::$db[30]['status']);
-    eq(1, count(stored_shipments(30)));
-    eq([[30, 'parts_shipped', ['1ZTEST30']]], $GLOBALS['__sc']);
-});
-
-t('a partial shipment: saved, Service Channel told (unchanged)', function () use ($psp) {
+t('part of an order: saved, partially-shipped, customer told by the note, Service Channel told (unchanged)', function () use ($psp) {
     reset_world();
     order(31, 'processing', []);
     metabox_post([11 => 1], '1ZTEST31');
     $psp->save_metabox(31, null);
+
     eq('partially-shipped', WC_Order::$db[31]['status']);
+    eq('Partial', WC_Order::$db[31]['meta']['_muse_track_status']);
+    eq(1, count(stored_shipments(31)));
+    eq([11 => 1], stored_shipments(31)[0]['items']);
+    eq([[31, 'parts_shipped', ['1ZTEST31']]], $GLOBALS['__sc']);
+    eq([[31, 'processing', 'partially-shipped']], WC_Order::$transitions);
+    eq(2, count(WC_Order::$notes), 'the dispatch note and WooCommerce\'s status note, nothing else');
+    eq(0, note_at('Shipment Dispatch'), 'the dispatch note comes first, as before');
+    eq(1, WC_Order::$notes[0][2], '"notify" ticked and the order not completing: the note goes to the customer');
+    eq([], WC_Admin_Notices::$notices);
+});
+
+t('a shipment that completes the order: saved, completed, the note kept private, Service Channel told (unchanged)', function () use ($psp) {
+    reset_world();
+    order(30, 'processing', ['_trx_order_number' => '12345678']);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST30');
+    $psp->save_metabox(30, null);
+
+    eq('completed', WC_Order::$db[30]['status']);
+    eq('Shipped', WC_Order::$db[30]['meta']['_muse_track_status']);
+    eq(1, count(stored_shipments(30)));
+    eq([[30, 'parts_shipped', ['1ZTEST30']]], $GLOBALS['__sc']);
+    eq([[30, 'processing', 'completed']], WC_Order::$transitions, 'one status change, straight to completed');
+    eq(2, count(WC_Order::$notes), 'the dispatch note and WooCommerce\'s status note, nothing else');
+    eq(0, note_at('Shipment Dispatch'));
+    eq(0, customer_notes(), '"notify" ticked, but the order completes: WooCommerce\'s completed e-mail tells the customer');
+    eq([], WC_Admin_Notices::$notices);
+});
+
+t('a further part on a partially-shipped order, "notify" not ticked: one save, private note', function () use ($psp) {
+    reset_world();
+    order(34, 'partially-shipped', ['_muse_shipments' => json_encode([['carrier' => 'UPS', 'other_carrier' => '', 'tracking_numbers' => ['1ZOLD'], 'items' => [12 => 1]]])]);
+    metabox_post([11 => 1], '1ZTEST34', false);
+    $psp->save_metabox(34, null);
+    eq(2, count(stored_shipments(34)));
+    eq('partially-shipped', WC_Order::$db[34]['status']);
+    eq(1, WC_Order::$writes, 'the status does not move, so there is no second save');
+    eq(1, count(WC_Order::$notes));
+    eq(0, customer_notes());
     eq(1, count($GLOBALS['__sc']));
 });
 
-t('completion refused: Service Channel is not told about a shipment the order did not keep', function () use ($psp) {
+echo "\nmetabox save: refused (R5)\n";
+
+t('everything left, no TRX #: the shipment is kept, the order is not completed, and the history says so', function () use ($psp) {
     reset_world();
     order(32, 'processing', []);
     metabox_post([11 => 2, 12 => 1], '1ZTEST32');
     $psp->save_metabox(32, null);
-    eq([], stored_shipments(32), 'the metabox still loses the shipment (not changed in this lane)');
-    eq('processing', WC_Order::$db[32]['status']);
+
+    eq(1, count(stored_shipments(32)), 'the shipment is in storage');
+    eq([11 => 2, 12 => 1], stored_shipments(32)[0]['items']);
+    eq('1ZTEST32', WC_Order::$db[32]['meta']['_muse_ship_track']);
+    eq('processing', WC_Order::$db[32]['status'], 'not completed in storage');
+    eq('Pending', WC_Order::$db[32]['meta']['_muse_track_status'], 'the flat status goes with the stored status');
+    eq([[32, 'parts_shipped', ['1ZTEST32']]], $GLOBALS['__sc'], 'the parts did ship: Service Channel told once');
+
+    // The order history, in order: dispatch (true now), the guard, WooCommerce's error, WooCommerce's false
+    // "changed to Completed" (11.3.1 announces a refused change), and last the correction.
+    $dispatch = note_at('Shipment Dispatch');
+    $guard    = note_at('Failed to mark as complete');
+    $error    = note_at('Error saving order ID 32.');
+    $false    = note_at('Order status changed from Processing to Completed.');
+    $fix      = note_at('The order was NOT changed to Completed; it is still Processing.');
+    eq([0, 1, 2, 3, 4], [$dispatch, $guard, $error, $false, $fix], 'the five notes, in this order');
+    eq(5, count(WC_Order::$notes), 'and no others');
+    ok(strpos(WC_Order::$notes[$fix][1], '[Multi Shipment] The order was NOT changed') === 0, 'the correction is signed as this box\'s, not the API\'s');
+    ok(strpos(WC_Order::$notes[$fix][1], 'TRX Order # must be entered') !== false, 'the correction carries the reason');
+    eq(0, WC_Order::$notes[$fix][2], 'the correction is a private note');
+
+    $blocked = notices_named('muse_psp_status_blocked');
+    eq(1, count($blocked), 'one notice for the admin');
+    ok(strpos($blocked[0][1], 'Order #32: the shipment was recorded, but the order was NOT changed to Completed and is still Processing.') === 0, $blocked[0][1]);
+    ok(strpos($blocked[0][1], 'TRX Order # must be entered') !== false, 'with the reason');
+    eq([], notices_named('muse_psp_shipment_not_saved'));
+});
+
+t('the note rule: "completes" means the shipment asks for completed, so a blocked completion mails no dispatch note either', function () use ($psp) {
+    reset_world();
+    order(35, 'processing', []);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST35');      // "notify" ticked
+    $psp->save_metabox(35, null);
+    eq(1, notes_like('Shipment Dispatch'), 'the dispatch is on the order');
+    eq(0, customer_notes(), 'but not mailed: the completed e-mail carries it once the order completes');
+
+    // The missing field is entered and the order saved again with nothing to ship: it completes.
+    WC_Order::$db[35]['meta']['_trx_order_number'] = '12345678';
+    metabox_post([], '');
+    $psp->save_metabox(35, null);
+    eq('completed', WC_Order::$db[35]['status']);
+    eq(1, count(stored_shipments(35)), 'no second shipment');
+    eq([], notices_named('muse_psp_status_blocked'), 'the notice about the earlier save is gone');
+});
+
+t('an order that refuses every save (completed, no TRX #): nothing stored, nothing claims a dispatch, the admin is told', function () use ($psp) {
+    reset_world();
+    order(33, 'completed', []);   // completed before the rule existed; the guard now refuses any save of it
+    metabox_post([11 => 1], '1ZTEST33');
+    $psp->save_metabox(33, null);
+
+    eq([], stored_shipments(33), 'nothing stored');
+    eq('completed', WC_Order::$db[33]['status']);
+    eq(0, notes_like('Shipment Dispatch'), 'no note claiming a dispatch');
+    eq(0, customer_notes(), 'no customer e-mail');
     eq([], $GLOBALS['__sc'], 'Service Channel not told');
+    eq([], WC_Order::$transitions, 'the status was never touched, so WooCommerce announces nothing');
+    eq(0, notes_like('Order status changed from'));
+    eq(0, notes_like('was NOT changed to'));
+
+    $lost = notices_named('muse_psp_shipment_not_saved');
+    eq(1, count($lost), 'one notice for the admin');
+    ok(strpos($lost[0][1], 'Order #33: the shipment was NOT recorded.') === 0, $lost[0][1]);
+    ok(strpos($lost[0][1], 'TRX Order # must be entered') !== false, 'with the reason');
+    eq([], notices_named('muse_psp_status_blocked'));
+});
+
+t('the same on WooCommerce before 11.2.2: the reason still reaches the notice', function () use ($psp) {
+    reset_world('WC_Order');
+    order(36, 'completed', []);
+    metabox_post([11 => 1], '1ZTEST36');
+    $psp->save_metabox(36, null);
+    eq([], stored_shipments(36));
+    eq(0, notes_like('Shipment Dispatch'));
+    eq([], $GLOBALS['__sc']);
+    $lost = notices_named('muse_psp_shipment_not_saved');
+    eq(1, count($lost));
+    ok(strpos($lost[0][1], 'TRX Order # must be entered') !== false, $lost[0][1]);
+});
+
+t('everything left, no TRX #, when an object cache hands back the same object: still kept, still not completed', function () use ($psp) {
+    reset_world('WC_Order_Modern', true);
+    order(37, 'processing', []);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST37');
+    $psp->save_metabox(37, null);
+    eq(1, count(stored_shipments(37)));
+    eq('processing', WC_Order::$db[37]['status']);
+    eq(1, notes_like('The order was NOT changed to Completed; it is still Processing.'));
+    eq(1, count(notices_named('muse_psp_status_blocked')));
+});
+
+t('everything left, no TRX #, on WooCommerce trunk (no false announcement): same result, same correction', function () use ($psp) {
+    reset_world('WC_Order_Trunk');
+    order(38, 'processing', []);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST38');
+    $psp->save_metabox(38, null);
+    eq(1, count(stored_shipments(38)));
+    eq('processing', WC_Order::$db[38]['status']);
+    eq([], WC_Order::$transitions);
+    eq(0, notes_like('Order status changed from'));
+    eq(1, notes_like('The order was NOT changed to Completed; it is still Processing.'));
+    eq(1, count($GLOBALS['__sc']));
 });
 
 $_POST = [];

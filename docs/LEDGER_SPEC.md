@@ -657,7 +657,7 @@ Enables the locked agent to view on-track orders due within the next 2 business 
 
 ## 15. Proposed updates from an outside system (added 2026-11-23)
 
-Status: **BUILT, run on the staging clone 2026-11-23 (§15.10), not on production.** Unit- and SQL-level tests
+Status: **ON PRODUCTION since 2026-11-23 11:17 ET (module 1.1.0, §15.11), with nothing sending to it yet.** Run on the staging clone first (§15.10). Unit- and SQL-level tests
 pass (§15.8). Built in `plugins/musesys-general/modules/musesys-ledger/`; production runs `musesys-mega` 1.2.11 and
 does not have it. The staging run found one defect in the approval, fixed the same day (§15.5 steps 1 and 4).
 
@@ -824,7 +824,7 @@ and asserts the schema version against `Ledger_Schema::VERSION` instead of the l
 - **The three AJAX endpoints have not been called over HTTP** (`admin-ajax.php` with a real nonce and cookie).
   Their handlers' logic ran on staging through the same methods, and the screen script was rendered against
   real staging data in a local page (§15.10), but nobody has yet clicked Approve in a signed-in browser.
-- **Not on production.** Production runs `musesys-mega` without this module. The staging clone has it (copied
+- **On production since 2026-11-23 (§15.11); the text of this bullet is kept for the staging history.** Before that release production ran `musesys-mega` without this module. The staging clone has it (copied
   into `musesys-mega/modules/musesys-ledger`); the next `~/bin/sync-staging.sh` run will overwrite it with
   production's copy. The copy under `legacy/musesys-mega/` in this repository was not changed.
 - **A dedicated service account was not created.** The HTTP run used Cairn's existing administrator
@@ -871,7 +871,7 @@ existing `ship-lines` endpoint, so UACP is exposed to it too: shipping the last 
 still fires `muse_send_sc_automation('parts_shipped')` when tracking was sent; that was not observed (the test
 order had no Service Channel work order).
 
-**R5 fix (2026-11-23, separate lane; in the working tree, not committed, not deployed, not run on staging).**
+**R5 fix (2026-11-23, separate lane; committed as `bd5221e`, run on the staging clone the same day (results at the end of this section), NOT on production).**
 
 *Mechanism, confirmed in the WooCommerce source* (`abstract-wc-order.php` and `class-wc-order.php`, tag 11.3.1,
 the version the site runs, read 2026-11-23; the reviewing session checked the same on the installed copy on the
@@ -988,3 +988,101 @@ still says "Status → completed" and then reloads the order, which shows the re
 
 Test data left on the clone: 12 proposals (3 applied, 2 rejected, 7 superseded, 0 waiting), two test shipments
 on order 240019 (now partially shipped) and one on 240023 (now completed), all tagged `STAGING TEST`.
+
+**R5 fix on the staging clone (2026-11-23 11:36 ET, `bd5221e`, handler copied byte for byte, previous one kept in
+`private_html/partial-ship-backups/`).** Called through the REST layer inside WordPress as an administrator, plus
+one real HTTPS call. Mail and webhooks blocked by the staging guard.
+
+| Case | Result |
+|---|---|
+| Confirmed order, part of it | `200`, shipment stored, `partially-shipped`, nothing blocked; the six legacy answer keys present |
+| Same order, the rest | `200`, `completed`, ledger rows `CLOSED`, no "NOT changed" note |
+| **Order with no TRX #, everything left** | **`200`, shipment kept**, status still `processing`, `status_wanted: completed`, `status_blocked: TRX Order # must be entered before completing the order.` |
+| Notes on that order, in order | the shipment note; "Email "Customer note" sent."; the guard's "Failed to mark as complete…"; WooCommerce's "Error saving order ID…"; WooCommerce's false "Order status changed from Processing to Completed."; then the handler's "The order was NOT changed to Completed; it is still Processing. Reason: …" |
+| An order made to refuse every save (a hook in the test process only) | `409` `muse_shipment_not_saved` with the reason; nothing stored; status untouched; Service Channel hook not fired |
+| Unknown order | `404` |
+| Review queue on top (§15.5) | proposal approved through the new handler: `applied`, shipment stored, `partially-shipped` |
+| Real HTTPS from Cairn #2 (administrator application password) | no credentials `401`; partial shipment `200`, stored, visible in `ledger/open-orders` |
+| Staging error log | no PHP error written during the run |
+
+What the run settled:
+
+- **`wc_get_order()` after a save is a fresh read on this site** (HPOS on): the stored-shipment check saw each
+  shipment, and saw none where the save was refused.
+- **No "completed order" e-mail was attempted**, neither for the real completion nor for the refused one. The only
+  mail attempted in the whole run was the customer note of the one call sent with `notify: true` (blocked by the
+  guard). So on this configuration a refused completion does not mail the customer "completed". Production's
+  e-mail settings were not read separately; the clone is a copy of them.
+- **A second module fires the Service Channel hook on every status change**: `musesys-mega`'s
+  `MuseSys-AfterOrder/muse-order-tracking.php` (not in `musesys-general`) does
+  `do_action('muse_send_sc_automation', $order_id, $new_status)` on `woocommerce_order_status_changed`. So the
+  refused completion also raises that hook with `completed`. `build_sc_event_payload()` has no case for it, so
+  nothing is sent; by reading, not by an observed Service Channel order.
+- The ledger shows the no-TRX order as `MISSING_TRX` (rule 2 comes before `SHIPPED_NOT_CLOSED`), with the
+  shipment on it.
+- A repeat of the same request with the same tracking and no lines stores a second, tracking-only shipment.
+  That is the old behaviour (R1), and the reason the handler answers `200` and not an error once the shipment
+  is kept.
+
+**The order-screen path, fixed the same day (the commit after `bd5221e`).** The first staging run of
+`save_metabox()` showed more than the known loss: for an order with no TRX #, everything left, nothing was stored,
+yet the order got the "Shipment Dispatch … Tracking: …" note (written before the save) and WooCommerce's false
+"changed to Completed". `save_metabox()` now works like the endpoint:
+
+1. The shipment is saved on its own, the status untouched. If it is not in storage afterwards, nothing claims a
+   dispatch: no note, no customer e-mail, no Service Channel update; the next admin page shows the notice
+   "the shipment was NOT recorded" with the reason.
+2. Only then is the status recomputed and saved. The status is set once and never set back (in WooCommerce 11.3.1
+   `set_status()` records a change that `status_transition()` then announces).
+3. A stored shipment with a refused status change gets the same private "The order was NOT changed to Completed;
+   it is still …" note as the endpoint, after WooCommerce's false one, and an admin notice saying so.
+4. Service Channel is told about every stored shipment with tracking, whether or not the order could complete.
+5. The old rule stays: when the shipment asks for `completed`, the "Shipment Dispatch" note is not e-mailed to the
+   customer, because the completed e-mail is meant to carry it. "Asks for" is decided before the status save, so
+   it also applies when the completion is then refused.
+
+Tests: 29 pass; 6 of them fail against the handler of `bd5221e`, 19 against the original one.
+
+Second staging run (handler of the working tree, 11:53 ET), order screen called with the form fields it reads:
+
+| Case | Result |
+|---|---|
+| Confirmed order, part, notify ticked | stored, `partially-shipped`, dispatch note written and its customer e-mail attempted (blocked by the guard) |
+| Confirmed order, everything | stored, `completed` |
+| **No TRX #, everything left** | **shipment kept**, status unchanged; notes end with the handler's "NOT changed to Completed"; admin notice set; Service Channel hook raised with `parts_shipped` |
+| An order made to refuse every save | nothing stored, no "Shipment Dispatch" note, admin notice "NOT recorded", Service Channel not told |
+| The endpoint cases of the first run, again on this handler | all as before |
+
+Service Channel orders, through the endpoint (first run of this kind anywhere):
+
+| Case | Result |
+|---|---|
+| Confirmed order with a Service Channel work order, part | `200`, stored; one "Status Update" mail to the work order's `wonote.servicechannel.net` address attempted and blocked by the guard; note "ServiceChannel Automation: Parts Shipped sent to 1 work order(s)" |
+| Service Channel order with no TRX #, everything left | `200`, shipment kept, completion refused with the reason; the same single parts-shipped mail attempted; nothing for `completed` |
+
+Also settled:
+
+- **Production's "completed order" customer e-mail is switched off** (`woocommerce_customer_completed_order_settings`,
+  read on production 2026-11-23). So a refused completion mails nobody "completed". It also means rule 5 above
+  leaves the customer with no e-mail at all for a final shipment entered on the order screen: the note is held
+  back for a completed e-mail that this site does not send. Old behaviour, not changed here; a decision for Cole.
+- **UACP:** the five edited files were carried into `C:\Projects\UACP` (the repository releases are cut from), each
+  keeping its own line endings; same change, files compile. No build was made, so staff run the previous UACP until
+  a release. UACP still does not read `status_blocked`: when a shipment is kept and completion refused, it shows
+  success and says nothing about the order not completing.
+- The staging clone was reset from production afterwards with `~/bin/sync-staging.sh --skip-uploads`, so it no
+  longer holds the test data or the corrected handler.
+
+Still not run: UACP's dialogs; anything on production.
+
+### 15.11 Production (2026-11-23)
+
+The ledger module of `3d9b0ba` was released into production's `musesys-mega/modules/musesys-ledger` at 16:17 UTC
+on Cole's go, with nothing allowed to send to it. Record, checks and rollback: Cairn repository,
+`docs/CC10_Ledger_Production_Release_Prep_2026-11-23.md` §9. Cole confirmed the ledger screen in a signed-in
+browser afterwards: the "Proposed updates" tab is there and empty.
+
+Production does **not** have the R5 fix: its `musesys-partial-ship/index.php` is the previous handler. The copy
+of the ledger under `legacy/musesys-mega/modules/musesys-ledger` in this repository was brought in line with
+production the same day (27 files, identical to `3d9b0ba`); `legacy/musesys-mega`'s partial-ship handler is still
+the previous one, as on production.
