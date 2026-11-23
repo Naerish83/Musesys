@@ -586,6 +586,10 @@ class ShipmentDeskView(ttk.Frame):
             if meta_data:
                 self.bridge.client.update_order(data['id'], update_payload)
 
+            # Set when the site keeps the shipment but refuses to complete the order (no TRX #, ...).
+            notice = ""
+            shown_status = data['status']
+
             if lines_to_ship or data.get('tracking_number'):
                 ship_payload = {
                     "carrier": carrier_code,
@@ -599,8 +603,12 @@ class ShipmentDeskView(ttk.Frame):
                     raise RuntimeError(
                         "The shipment was NOT recorded on the order.\n" + self.bridge.ship_problem()
                     )
+                # Read now, on this thread, right after the call it belongs to.
+                notice = self.bridge.ship_notice()
+                if notice:
+                    shown_status = self.bridge.ship_blocked_status() or "not changed"
 
-            self.after(0, lambda: self._on_save_complete(data['id'], data['status']))
+            self.after(0, lambda: self._on_save_complete(data['id'], shown_status, notice))
         except Exception as e:
             traceback.print_exc()
             # Bind the text now: `e` is gone by the time the main thread runs the lambda.
@@ -608,9 +616,16 @@ class ShipmentDeskView(ttk.Frame):
             self.after(0, lambda: messagebox.showerror("Error", f"Save failed: {reason}"))
             self.after(0, lambda: self.btn_save.config(state='normal'))
 
-    def _on_save_complete(self, order_id, new_status):
+    def _on_save_complete(self, order_id, new_status, notice=""):
         self.btn_save.config(state='normal')
-        messagebox.showinfo("✅ Saved", f"Order #{order_id} updated.\nStatus → {new_status}")
+        if notice:
+            # The shipment is saved, the order is not completed: a warning, not "Saved ... completed".
+            messagebox.showwarning(
+                "Shipment saved, order NOT completed",
+                f"Order #{order_id}\n{notice}\n\nStatus → {new_status}"
+            )
+        else:
+            messagebox.showinfo("✅ Saved", f"Order #{order_id} updated.\nStatus → {new_status}")
         # Rapid-fire workflow: clear search + reload the full index so the next
         # lookup reflects this save, and refocus for the next order.
         self.search_entry.delete(0, tk.END)

@@ -760,13 +760,17 @@ class OrderOpsView(ttk.Frame):
             # Write back to UI fields so they're in sync
             self._sync_logistics_fields_to_ui(log_data)
 
+            old_status = data.get('status')
             new_status = self.calculate_status_progression(data)
             data['status'] = new_status
 
-            self.save_order_to_db(data)
-            self.update_status_display(new_status)
+            notice = self.save_order_to_db(data)
+            self.update_status_display(self._status_after_save(notice, new_status, old_status))
             self.manual_refresh()
-            messagebox.showinfo("✅ Order Updated", "Order updated successfully!")
+            if notice:
+                messagebox.showwarning("Shipment saved, order NOT completed", notice)
+            else:
+                messagebox.showinfo("✅ Order Updated", "Order updated successfully!")
         except Exception as e:
             traceback.print_exc()
             messagebox.showerror("Error", f"Failed to update: {str(e)}")
@@ -829,13 +833,18 @@ class OrderOpsView(ttk.Frame):
 
             self._sync_logistics_fields_to_ui(log_data)
 
+            old_status = data.get('status')
             new_status = self.calculate_status_progression(data)
             data['status'] = new_status
 
-            self.save_order_to_db(data)
+            notice = self.save_order_to_db(data)
+            new_status = self._status_after_save(notice, new_status, old_status)
             self.update_status_display(new_status)
             self.manual_refresh()
-            messagebox.showinfo("✅ Tracking Updated", f"Tracking updated! Status → {new_status}")
+            if notice:
+                messagebox.showwarning("Shipment saved, order NOT completed", f"{notice}\n\nStatus → {new_status}")
+            else:
+                messagebox.showinfo("✅ Tracking Updated", f"Tracking updated! Status → {new_status}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed: {str(e)}")
 
@@ -1196,6 +1205,17 @@ class OrderOpsView(ttk.Frame):
                  raise RuntimeError(
                      "The shipment was NOT recorded on the order.\n" + self.bridge.ship_problem()
                  )
+             # '' unless the site kept the shipment but refused to complete the order (no TRX #, ...).
+             # Every caller shows it as a warning in place of its success message.
+             return self.bridge.ship_notice()
+
+        return ""
+
+    def _status_after_save(self, notice, new_status, old_status):
+        """The status to show after save_order_to_db: the order's real one when the site refused the change."""
+        if not notice:
+            return new_status
+        return self.bridge.ship_blocked_status() or old_status
 
     def format_human_time(self, date_string):
         if not date_string: return ""
@@ -1398,13 +1418,22 @@ class OrderOpsView(ttk.Frame):
                 'line_items': line_items_data
             }
             
+            old_status = data.get('status')
             new_status = self.calculate_status_progression(data)
             data['status'] = new_status
-            
-            self.save_order_to_db(data)
-            
+
+            notice = self.save_order_to_db(data)
+            new_status = self._status_after_save(notice, new_status, old_status)
+
             self.manual_refresh()
-            messagebox.showinfo("✅ Success!", f"Tracking added to Order #{order.id}\nStatus: {new_status}", parent=self.quick_modal)
+            if notice:
+                messagebox.showwarning(
+                    "Tracking saved, order NOT completed",
+                    f"Order #{order.id}\n{notice}\n\nStatus: {new_status}",
+                    parent=self.quick_modal
+                )
+            else:
+                messagebox.showinfo("✅ Success!", f"Tracking added to Order #{order.id}\nStatus: {new_status}", parent=self.quick_modal)
             self.clear_quick_form()
             
         except Exception as e:

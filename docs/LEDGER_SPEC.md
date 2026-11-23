@@ -734,16 +734,26 @@ There is no approve route. An outside system cannot approve.
 | Capability | Granted to | Allows |
 |---|---|---|
 | `musesys_ledger_propose` | new role `musesys_ledger_service` ("Ledger Integration": `read` + this, no Woo capabilities); `administrator` | The REST routes in §15.3 |
-| `musesys_ledger_approve` | `administrator` only | Approve / reject on the ledger screen |
+| `musesys_ledger_approve` | `administrator`; `shop_manager` (roles version `3`) | Approve / reject on the ledger screen |
+| `musesys_ledger_view` | as before (agent, viewer, `administrator`); `shop_manager` (roles version `3`) | Open the ledger screen |
 
 - The roles version goes `1` → `2`, so the role and capabilities are registered on the next request after deploy.
-- **Who may approve is a default, not a decision.** Granting `musesys_ledger_approve` to the agent role would let
-  the agent record shipments, which D5 and §6.2 rule out today. Approval also runs the ship-lines endpoint as the
-  approving user, and that endpoint demands `manage_woocommerce` or `edit_shop_orders`; the agent has neither.
+- **Who may approve (operator decision, 2026-11-23): administrators and shop managers.** Shop managers already
+  record shipments: they hold `edit_shop_orders`, which the ship-lines endpoint demands of the approving user. The
+  roles version goes `2` → `3`: `shop_manager` gains `musesys_ledger_view` and `musesys_ledger_approve`, and nothing
+  else. A shop manager therefore sees the ledger and the "Proposed updates" tab and can approve or reject, and
+  cannot use the ledger's own write actions (log e-mail / call, ETA, note: `musesys_ledger_manage`) or file
+  proposals. Sites without a `shop_manager` role are unaffected. Taking the two capabilities away again needs a
+  roles change of its own: lowering the version does not remove them.
+- The agent role stays as it was: granting it `musesys_ledger_approve` would let the agent record shipments, which
+  D5 and §6.2 rule out, and the ship-lines endpoint would refuse it anyway (the agent holds neither
+  `manage_woocommerce` nor `edit_shop_orders`).
 - The locked agent can open the tab and read proposals (`musesys_ledger_proposals` is on the AJAX whitelist).
   The approve and reject actions are not whitelisted and also fail the capability check.
 - The outside system should use its own account with the service role and an application password. Cairn
   currently signs in as an administrator; that works (admins hold the capability) but is more than it needs.
+  On wegmansparts.com the account exists since 2026-11-23: login `cairn-ledger`, role "Ledger Integration", no
+  application password yet (the operator creates it and enters it into Cairn with `site-ledger:set-account`).
 
 ### 15.5 Approving
 
@@ -1092,3 +1102,62 @@ Before that release production ran the previous handler. The copy
 of the ledger under `legacy/musesys-mega/modules/musesys-ledger` in this repository was brought in line with
 production the same day (27 files, identical to `3d9b0ba`); `legacy/musesys-mega`'s partial-ship module was brought in line after
 the R5 release (identical to `d917e72`).
+
+### 15.12 Decisions of 2026-11-23 (afternoon) and what was built for them
+
+Cole decided the open questions of §15.4, §15.9 and §15.10. What follows is built in the working tree and **not
+released**: production runs the ledger module of `3d9b0ba` and the shipment module of `d917e72` until a release.
+
+| Decision | Built |
+|---|---|
+| Administrators **and shop managers** may approve or reject | `Ledger_Access`: roles version `3`, `shop_manager` gains view + approve (§15.4). Module header `1.1.1`; schema stays `1.1.0`. |
+| Any open order matched by Gerharz PO may be proposed, vendor tracking included | Nothing: as built. |
+| Cairn #3 sends, after its baseline load | Nothing here. Production stays closed to Cairn until then. |
+| "Email the customer" on Approve starts ticked | Nothing: as built (§15.5). |
+| A final shipment entered on the order screen e-mails the dispatch note | Shipment module, below. |
+| Service account now | Account `cairn-ledger` created on production (§15.4). No application password yet. |
+| UACP says when a shipment was saved and the order not completed | UACP, below. |
+
+**Order screen (rule 5 of §15.10, replaced).** The "Shipment Dispatch" note is held back from the customer only
+when the shipment asks for `completed`, "notify" is ticked **and WooCommerce's "completed order" customer e-mail is
+switched on**. Where that e-mail is off (wegmansparts.com) or not registered, the note is mailed as for a partial
+shipment, because nothing else tells the customer. The question is asked of the e-mail object
+(`WC_Email::is_enabled()`), which is what WooCommerce asks before it sends. With "notify" not ticked the note is
+never a customer note, as before. On a site with the completed e-mail off, a blocked completion now mails the
+dispatch note too: the shipment is in storage by then, so the note is true. The endpoint (UACP, ledger approvals)
+is unchanged; it never held the note back.
+
+**UACP.** `ship_lines` still returns `True` for a kept shipment. The client now keeps what the `200` answer says
+(`status_blocked`, `status_wanted`, `status`), and the four places that record a shipment (Order Guide cell, Order
+Ops save / tracking / quick-add, Shipment Desk) show a warning in place of their success message:
+"The shipment WAS recorded on the order. The order was NOT changed to completed; it is still processing. Reason: …",
+with the order's real status where they show one. Carried into `C:\Projects\UACP`; no release build.
+
+Checked 2026-11-23:
+
+- Shipment module tests: 34 pass (29 before; the 5 new ones cover completed e-mail off / on / not registered,
+  "notify" ticked and not, and a blocked completion).
+- Ledger pure tests: 14 pass. The storage tests (20) were not rerun: the scratch MySQL was not running and the
+  change does not touch storage.
+- UACP: the five files compile in both repositories; client and bridge fed fake site answers (plain success, kept
+  shipment with refused completion, the next call, a refused shipment): 10 of 10 as expected.
+- Staging, read-only, capabilities granted in memory to one of its 4 shop managers: sees the proposals payload with
+  `can_approve`, passes the ship-lines permission check (`404` for an unknown order, not `403`), still cannot use
+  the ledger's write actions or file proposals, and is not locked like the agent. Nothing was written.
+
+Not done, not verified:
+
+- **Neither change has run inside WordPress.** No staging deploy of this working tree, no release.
+- A shop manager has not opened the ledger screen in a browser.
+- UACP's dialogs have still never been run; no build, so staff run 2.1.2 until a release.
+- The dispatch-note e-mail itself was not sent anywhere (staging blocks all mail).
+- `legacy/musesys-mega` copies are untouched: they mirror production and follow a release.
+- **The dispatch-note e-mail's subject follows the status the order had before the shipment** (read in the code,
+  not observed): the note is written before the status is saved, and `filter_email_subject()` /
+  `filter_email_heading()` pick their words from the stored status. A final shipment on a partially-shipped order
+  therefore goes out as "Update: Partial Shipment for Order #…", and one on a processing order with WooCommerce's
+  plain note subject. The endpoint has always behaved this way (UACP, ledger approvals); the order screen now
+  shares it. Not changed.
+- UACP saves that only call `update_order` (no shipment) do not read the site's answer, so a completion refused
+  there still shows as success. `bridge.save_order()` (no caller) and `app/data/fix_bridge.py` also call
+  `ship_lines` and were left as they are.

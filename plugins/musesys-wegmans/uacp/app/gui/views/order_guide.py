@@ -255,7 +255,16 @@ class OrderGuideView(ttk.Frame):
                     "closeout": closeout
                 }
                 success = self.bridge.ship_lines(order_no, payload)
-                if success:
+                # Read now, on this thread, right after the call it belongs to.
+                notice = self.bridge.ship_notice() if success else ""
+                if success and notice:
+                    # Saved, but the site would not complete the order: amber, and say so.
+                    self.after(0, lambda: self.sheet.highlight_cells(row=row, column=3, bg="#fff3cd")) # Light amber
+                    self.after(0, lambda: messagebox.showwarning(
+                        "Tracking saved, order NOT completed",
+                        f"Order #{order_no}\n{notice}"
+                    ))
+                elif success:
                     self.after(0, lambda: self.sheet.highlight_cells(row=row, column=3, bg="#d4edda")) # Light green on success
                 else:
                     # A refused shipment used to leave the cell as typed, with nothing said.

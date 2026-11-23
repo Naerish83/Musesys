@@ -3,7 +3,7 @@
  * Module Name: MuseSys Ledger
  * Description: Fulfillment-obligation ledger — current-state projection of order lines, immutable
  *              activity log, and a locked-down agent workspace. Spec: LEDGER_SPEC.md (repo root).
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: MuseSystems
  */
 

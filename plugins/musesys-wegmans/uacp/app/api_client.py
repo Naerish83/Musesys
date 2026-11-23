@@ -17,6 +17,9 @@ class MuseSysAPIClient:
         self.wp_username = wp_username
         self.wp_app_password = wp_app_password
         self.last_ship_error = ""
+        self.last_ship_notice = ""
+        self.last_ship_wanted = ""
+        self.last_ship_status = ""
 
         self.session = requests.Session()
         self._setup_auth()
@@ -321,6 +324,12 @@ class MuseSysAPIClient:
 
         # Why the last call failed, for the caller to show. '' when it did not fail.
         self.last_ship_error = ""
+        # Set when the call succeeded (the shipment is on the order) but the site refused the status
+        # change that came with it, e.g. completing an order that has no TRX #: the site's reason,
+        # the status it refused, and the status the order really has. All '' otherwise.
+        self.last_ship_notice = ""
+        self.last_ship_wanted = ""
+        self.last_ship_status = ""
 
         try:
             # Direct requests.post to avoid header conflict
@@ -336,12 +345,30 @@ class MuseSysAPIClient:
                 return False
 
             response.raise_for_status()
+            self._read_ship_answer(response)
             return True
         except Exception as e:
             print(f"CRITICAL SHIP ERROR: {e}")
             if not self.last_ship_error:
                 self.last_ship_error = str(e)
             return False
+
+    def _read_ship_answer(self, response: requests.Response) -> None:
+        """
+        Keep what a successful ship-lines answer says about the order's status.
+        The site answers 200 with status_wanted / status_blocked when it kept the shipment but refused
+        the status change. Never raises: the shipment is saved whatever the body looks like.
+        """
+        try:
+            body = self._parse_json_response(response)
+        except Exception:
+            return
+        if not isinstance(body, dict):
+            return
+        if "status_blocked" in body or "status_wanted" in body:
+            self.last_ship_notice = str(body.get("status_blocked") or "The site did not say why.")
+            self.last_ship_wanted = str(body.get("status_wanted") or "")
+            self.last_ship_status = str(body.get("status") or "")
 
     def _server_message(self, response: requests.Response) -> str:
         """The site's own explanation of a refusal (WordPress sends {"code", "message"}), else the HTTP status."""

@@ -398,6 +398,35 @@ class MuseDataBridge:
             return "Not connected to the site."
         return getattr(self.client, "last_ship_error", "") or "The site did not accept it."
 
+    def ship_notice(self) -> str:
+        """
+        '' unless the last ship_lines call returned True (the shipment WAS recorded) while the site
+        refused the status change that came with it. Then: the words to show the user, as a warning.
+        Read it right after the ship_lines call it belongs to; the next call clears it.
+        """
+        if not self.client:
+            return ""
+        reason = getattr(self.client, "last_ship_notice", "")
+        if not reason:
+            return ""
+        wanted = getattr(self.client, "last_ship_wanted", "") or "completed"
+        actual = getattr(self.client, "last_ship_status", "")
+        still = f"; it is still {actual}" if actual else ""
+        return (
+            "The shipment WAS recorded on the order.\n"
+            f"The order was NOT changed to {wanted}{still}.\n"
+            f"Reason: {reason}"
+        )
+
+    def ship_blocked_status(self) -> str:
+        """
+        The status the order really has after a ship_lines call whose status change was refused,
+        '' when nothing was refused or the site did not say.
+        """
+        if not self.client or not getattr(self.client, "last_ship_notice", ""):
+            return ""
+        return getattr(self.client, "last_ship_status", "")
+
     def upload_image_async(self, path: str, sku: str) -> Optional[int]:
         """
         Uploads an image, renaming it to {sku}.{ext}.

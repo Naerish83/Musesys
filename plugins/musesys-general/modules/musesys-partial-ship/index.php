@@ -405,7 +405,9 @@ final class Muse_Partial_Ship_Plus {
             // it. The note is written before the status is saved, where it always was, so a refusal is not
             // known yet; and a blocked order is completed as soon as its missing field is entered, when the
             // completed e-mail carries this shipment. Mailing the note as well would tell the customer twice.
-            if ($new_status === 'completed' || $new_status === 'wc-completed') {
+            // That only holds while WooCommerce's completed e-mail is switched on. Where it is off (it is on
+            // the Wegmans site) nothing else tells the customer, so the note is mailed as for a partial shipment.
+            if ($notify && ($new_status === 'completed' || $new_status === 'wc-completed') && $this->completed_email_enabled()) {
                 $notify = false;
             }
 
@@ -940,6 +942,19 @@ final class Muse_Partial_Ship_Plus {
             $why,
             $source
         ), 0);
+    }
+
+    /**
+     * Whether WooCommerce's "completed order" customer e-mail is switched on.
+     *
+     * Asked of the e-mail object itself (WC_Email::is_enabled()), which is what WooCommerce asks before it
+     * sends: the saved setting, WooCommerce's default when the setting was never saved, and the
+     * woocommerce_email_enabled_customer_completed_order filter. An e-mail that is not registered is off.
+     */
+    private function completed_email_enabled() {
+        $emails = WC()->mailer()->get_emails();
+        $email  = isset($emails['WC_Email_Customer_Completed_Order']) ? $emails['WC_Email_Customer_Completed_Order'] : null;
+        return is_object($email) && $email->is_enabled();
     }
 
     /** A notice for the next admin page, the way the completion guard in order-fields raises its own. */
