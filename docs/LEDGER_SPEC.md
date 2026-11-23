@@ -1105,8 +1105,8 @@ the R5 release (identical to `d917e72`).
 
 ### 15.12 Decisions of 2026-11-23 (afternoon) and what was built for them
 
-Cole decided the open questions of §15.4, §15.9 and §15.10. What follows is built in the working tree and **not
-released**: production runs the ledger module of `3d9b0ba` and the shipment module of `d917e72` until a release.
+Cole decided the open questions of §15.4, §15.9 and §15.10. What follows was built on 2026-11-23, committed as
+`cae4f1d`, and **released to production the same day (§15.13)**. UACP was published as 2.1.3 the same day (§15.13).
 
 | Decision | Built |
 |---|---|
@@ -1131,7 +1131,7 @@ is unchanged; it never held the note back.
 (`status_blocked`, `status_wanted`, `status`), and the four places that record a shipment (Order Guide cell, Order
 Ops save / tracking / quick-add, Shipment Desk) show a warning in place of their success message:
 "The shipment WAS recorded on the order. The order was NOT changed to completed; it is still processing. Reason: …",
-with the order's real status where they show one. Carried into `C:\Projects\UACP`; no release build.
+with the order's real status where they show one. Carried into `C:\Projects\UACP` and published in UACP 2.1.3.
 
 Checked 2026-11-23:
 
@@ -1147,9 +1147,9 @@ Checked 2026-11-23:
 
 Not done, not verified:
 
-- **Neither change has run inside WordPress.** No staging deploy of this working tree, no release.
+- When this section was written neither change had run inside WordPress; both have since (§15.13).
 - A shop manager has not opened the ledger screen in a browser.
-- UACP's dialogs have still never been run; no build, so staff run 2.1.2 until a release.
+- UACP's dialogs have still never been run. (When this was written there was no build; 2.1.3 followed, §15.13.)
 - The dispatch-note e-mail itself was not sent anywhere (staging blocks all mail).
 - `legacy/musesys-mega` copies are untouched: they mirror production and follow a release.
 - **The dispatch-note e-mail's subject follows the status the order had before the shipment** (read in the code,
@@ -1161,3 +1161,50 @@ Not done, not verified:
 - UACP saves that only call `update_order` (no shipment) do not read the site's answer, so a completion refused
   there still shows as success. `bridge.save_order()` (no caller) and `app/data/fix_bridge.py` also call
   `ship_lines` and were left as they are.
+
+### 15.13 Staging rehearsal and production release of `cae4f1d` (2026-11-23)
+
+Both changes of §15.12 ran inside WordPress on the staging clone (13:16 to 13:21 ET) and were released to
+production the same day on Cole's go: the ledger module at 18:35 UTC (13:35 ET), the shipment module at 18:36 UTC.
+Records, commands and rollback: Cairn repository, `docs/CC10_Ledger_Production_Release_Prep_2026-11-23.md` §10–§11
+and `docs/CC11_Ship_Lines_Production_Release_Prep_2026-11-23.md` §10–§11.
+
+Staging, as the users concerned (no test grants):
+
+| Case | Result |
+|---|---|
+| Roles as stored after the deploy | version `3`; `shop_manager` = view + approve; administrator, agent, viewer, "Ledger Integration" as before; no other role holds a ledger capability |
+| Shop manager, domain calls | reject records reason and user; approve runs the real ship-lines call, shipment added, proposal `applied`, names the shop manager |
+| The screen's own handlers, with nonce and POST fields | agent approve and viewer reject → `Forbidden`; shop manager lists, approves with the e-mail box ticked (mail attempted, blocked by the staging guard), cannot approve twice, rejects |
+| Order screen, completed e-mail off, everything left, "notify" ticked | stored, `completed`, dispatch note is a customer note, exactly one e-mail attempted (the note) |
+| The same, "notify" not ticked | stored, `completed`, note private, no e-mail |
+| The same, completed e-mail switched on for one test process | note held back; exactly one e-mail attempted, WooCommerce's completed e-mail |
+| No TRX #, everything left, "notify" ticked | shipment kept, status unchanged, dispatch note mailed, private "NOT changed to Completed" correction last, admin notice |
+| Part of an order, "notify" ticked | as before |
+
+**Rollback of the ledger module does not take the permission away.** The two capabilities live on the
+`shop_manager` role in the database; the files of `3d9b0ba` neither grant nor remove them, so after a file
+rollback a shop manager can still approve. The full undo is
+`wp cap remove shop_manager musesys_ledger_view musesys_ledger_approve` (rehearsed on staging; the next deploy of
+`cae4f1d` grants them again).
+
+Production after the release, read-only, no order touched: roles version `3`; the role table above holds; one of
+the 4 shop managers sees an empty proposals list with `can_approve`, passes the ship-lines permission check and is
+refused by the filing routes; agent and viewer still cannot approve; `cairn-ledger` reads the ledger and is refused
+by ship-lines; the completed-order e-mail reads `off`, so the order screen mails the dispatch note from now on;
+ship-lines answers `401` without credentials and `404` for an unknown order; no 5xx and no PHP error since.
+
+The order-screen "Email Customer?" box starts ticked: from this release a final shipment entered there e-mails
+the customer unless it is unticked.
+
+Not verified: nothing was clicked in a signed-in browser on either site; no e-mail was delivered anywhere; no real
+order went through the new order-screen rule or a shop manager's approval on production (nothing is waiting:
+no Cairn sends to production yet). `legacy/musesys-mega` now mirrors production for both modules (`cae4f1d`).
+
+**UACP 2.1.3 was published 2026-11-23 19:16 UTC (14:16 ET)** from the UACP repository (`f10e670`, GitHub release
+`v2.1.3`): both UACP changes of §15.10 and §15.12 are in it. It is 2.1.3 because v2.1.2 was what staff already
+ran, and their copies update only to a greater version. The release and its files went up before `main` was
+pushed, since staff copies update the moment `main` carries the new `version.json`. Checked: the published exe
+downloaded back is identical to the build; the build opens its main window with the development settings and
+behaves like 2.1.2 in an empty folder; client and bridge against fake site answers, 10 of 10. Not checked: a
+staff copy updating; the new warnings in a real dialog.

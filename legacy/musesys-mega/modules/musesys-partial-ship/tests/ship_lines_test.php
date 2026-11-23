@@ -67,6 +67,25 @@ function esc_html($s) { return (string) $s; }
 function esc_url($s) { return (string) $s; }
 function wc_get_order_status_name($s) { return ucwords(str_replace('-', ' ', preg_replace('/^wc-/', '', (string) $s))); }
 
+/**
+ * WooCommerce's mailer, as far as the order-screen box asks it: is the "completed order" customer e-mail on?
+ * $GLOBALS['__completed_email'] is 'on' (WooCommerce's default), 'off' (the Wegmans site), or 'missing'
+ * (the e-mail is not registered at all).
+ */
+class Fake_Email {
+    public function is_enabled() { return $GLOBALS['__completed_email'] === 'on'; }
+}
+class Fake_Mailer {
+    public function get_emails() {
+        return $GLOBALS['__completed_email'] === 'missing' ? [] : ['WC_Email_Customer_Completed_Order' => new Fake_Email()];
+    }
+}
+class Fake_WooCommerce {
+    public function mailer() { return new Fake_Mailer(); }
+}
+function WC() { return new Fake_WooCommerce(); }
+$GLOBALS['__completed_email'] = 'on';
+
 class WP_Error {
     public $code; public $message; public $data;
     public function __construct($code = '', $message = '', $data = []) { $this->code = $code; $this->message = $message; $this->data = $data; }
@@ -215,6 +234,7 @@ function reset_world(string $class = 'WC_Order_Modern', bool $object_cache = fal
     $GLOBALS['__sc'] = [];
     $GLOBALS['__order_class'] = $class;
     $GLOBALS['__object_cache'] = $object_cache ? [] : null;
+    $GLOBALS['__completed_email'] = 'on';
 }
 
 /** Two lines: 2 gaskets (item 11) and 1 motor (item 12). */
@@ -546,7 +566,7 @@ t('part of an order: saved, partially-shipped, customer told by the note, Servic
     eq([], WC_Admin_Notices::$notices);
 });
 
-t('a shipment that completes the order: saved, completed, the note kept private, Service Channel told (unchanged)', function () use ($psp) {
+t('a shipment that completes the order, completed e-mail ON: saved, completed, the note held back, Service Channel told (unchanged)', function () use ($psp) {
     reset_world();
     order(30, 'processing', ['_trx_order_number' => '12345678']);
     metabox_post([11 => 2, 12 => 1], '1ZTEST30');
@@ -574,6 +594,69 @@ t('a further part on a partially-shipped order, "notify" not ticked: one save, p
     eq(1, count(WC_Order::$notes));
     eq(0, customer_notes());
     eq(1, count($GLOBALS['__sc']));
+});
+
+echo "\nmetabox save: the dispatch note when the shipment completes the order\n";
+
+t('completed e-mail OFF, "notify" ticked: the dispatch note goes to the customer, as for a partial shipment', function () use ($psp) {
+    reset_world();
+    $GLOBALS['__completed_email'] = 'off';
+    order(40, 'processing', ['_trx_order_number' => '12345678']);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST40');
+    $psp->save_metabox(40, null);
+
+    eq('completed', WC_Order::$db[40]['status']);
+    eq(1, count(stored_shipments(40)));
+    eq(2, count(WC_Order::$notes), 'the dispatch note and WooCommerce\'s status note, nothing else');
+    eq(0, note_at('Shipment Dispatch'), 'the dispatch note still comes first');
+    eq(1, WC_Order::$notes[0][2], 'nothing else tells the customer, so the note is a customer note');
+    eq(1, customer_notes(), 'mailed once');
+    eq([[40, 'parts_shipped', ['1ZTEST40']]], $GLOBALS['__sc']);
+    eq([], WC_Admin_Notices::$notices);
+});
+
+t('completed e-mail OFF, "notify" not ticked: never a customer note', function () use ($psp) {
+    reset_world();
+    $GLOBALS['__completed_email'] = 'off';
+    order(41, 'processing', ['_trx_order_number' => '12345678']);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST41', false);
+    $psp->save_metabox(41, null);
+    eq('completed', WC_Order::$db[41]['status']);
+    eq(1, notes_like('Shipment Dispatch'));
+    eq(0, customer_notes());
+});
+
+t('completed e-mail ON, "notify" not ticked: never a customer note', function () use ($psp) {
+    reset_world();
+    order(42, 'processing', ['_trx_order_number' => '12345678']);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST42', false);
+    $psp->save_metabox(42, null);
+    eq('completed', WC_Order::$db[42]['status']);
+    eq(1, notes_like('Shipment Dispatch'));
+    eq(0, customer_notes());
+});
+
+t('the completed e-mail is not registered at all: treated as off, the note goes to the customer', function () use ($psp) {
+    reset_world();
+    $GLOBALS['__completed_email'] = 'missing';
+    order(43, 'processing', ['_trx_order_number' => '12345678']);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST43');
+    $psp->save_metabox(43, null);
+    eq('completed', WC_Order::$db[43]['status']);
+    eq(1, customer_notes());
+});
+
+t('completed e-mail OFF, completion blocked (no TRX #), "notify" ticked: the customer is told of the dispatch now', function () use ($psp) {
+    reset_world();
+    $GLOBALS['__completed_email'] = 'off';
+    order(44, 'processing', []);
+    metabox_post([11 => 2, 12 => 1], '1ZTEST44');
+    $psp->save_metabox(44, null);
+    eq(1, count(stored_shipments(44)), 'the shipment is in storage, so the note is true');
+    eq('processing', WC_Order::$db[44]['status']);
+    eq(1, WC_Order::$notes[note_at('Shipment Dispatch')][2], 'the dispatch note is a customer note');
+    eq(1, customer_notes(), 'and the only one: the correction stays private');
+    eq(1, notes_like('The order was NOT changed to Completed; it is still Processing.'));
 });
 
 echo "\nmetabox save: refused (R5)\n";
@@ -611,7 +694,7 @@ t('everything left, no TRX #: the shipment is kept, the order is not completed, 
     eq([], notices_named('muse_psp_shipment_not_saved'));
 });
 
-t('the note rule: "completes" means the shipment asks for completed, so a blocked completion mails no dispatch note either', function () use ($psp) {
+t('the note rule, completed e-mail ON: "completes" means the shipment asks for completed, so a blocked completion mails no dispatch note either', function () use ($psp) {
     reset_world();
     order(35, 'processing', []);
     metabox_post([11 => 2, 12 => 1], '1ZTEST35');      // "notify" ticked

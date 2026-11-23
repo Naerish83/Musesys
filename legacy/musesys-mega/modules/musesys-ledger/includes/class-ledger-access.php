@@ -16,7 +16,7 @@ final class Ledger_Access {
     const ROLE_AGENT   = 'musesys_ledger_agent';
     const ROLE_VIEWER  = 'musesys_ledger_viewer';
     const ROLE_SERVICE = 'musesys_ledger_service';
-    const ROLES_VER    = '2';
+    const ROLES_VER    = '3';
     const OPT_ROLES    = 'musesys_ledger_roles_version';
     const PAGE         = 'musesys-ledger';
 
@@ -76,6 +76,14 @@ final class Ledger_Access {
             $admin->add_cap(self::CAP_MANAGE);
             $admin->add_cap(self::CAP_PROPOSE);
             $admin->add_cap(self::CAP_APPROVE);
+        }
+        // Shop managers already record shipments (they hold edit_shop_orders, which the ship-lines endpoint
+        // demands), so they may see the ledger and decide proposals (operator decision, 2026-11-23; §15.4).
+        // View and approve only: no ledger write actions (email / call / ETA / note), no filing of proposals.
+        $shop = get_role('shop_manager');
+        if ($shop) {
+            $shop->add_cap(self::CAP_VIEW);
+            $shop->add_cap(self::CAP_APPROVE);
         }
         update_option(self::OPT_ROLES, self::ROLES_VER, false);
     }
